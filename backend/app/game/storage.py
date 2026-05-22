@@ -82,6 +82,14 @@ class ChromaMemoryStore:
         documents = result.get("documents") or [[]]
         return list(documents[0])
 
+    def delete_case(self, case_id: str) -> None:
+        self._ensure_available()
+        self._collection.delete(where={"case_id": {"$eq": case_id}})
+
+    def delete_case_if_available(self, case_id: str) -> None:
+        if self.available:
+            self._collection.delete(where={"case_id": {"$eq": case_id}})
+
     def _init_chroma(self) -> None:
         try:
             import chromadb
@@ -122,6 +130,11 @@ class GameStorage:
     def load_case_scripts(self) -> dict[str, dict[str, Any]]:
         rows = self._query("select case_id, payload from case_scripts")
         return {row["case_id"]: json.loads(row["payload"]) for row in rows}
+
+    def delete_case(self, case_id: str) -> None:
+        self._execute("delete from case_scripts where case_id = ?", (case_id,))
+        self._execute("delete from sessions where case_id = ?", (case_id,))
+        self.memory.delete_case_if_available(case_id)
 
     def save_session(self, session_id: str, case_id: str, payload: dict[str, Any]) -> None:
         self._execute(

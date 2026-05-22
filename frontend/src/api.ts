@@ -1,4 +1,10 @@
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api'
+const ASSET_BASE = API_BASE.replace(/\/api\/?$/, '')
+
+export function assetUrl(value: string) {
+  if (!value || value.startsWith('data:') || /^https?:\/\//.test(value)) return value
+  return `${ASSET_BASE}${value.startsWith('/') ? value : `/${value}`}`
+}
 
 export type Difficulty = 'easy' | 'medium' | 'hard'
 export type CaseStatus = 'unsolved' | 'solved' | 'mistaken'
@@ -74,6 +80,8 @@ export interface ActionResponse {
 export interface HealthResponse {
   ok: boolean
   qwen_enabled?: boolean
+  qwen_image_enabled?: boolean
+  qwen_image_model?: string
   deepagents_enabled?: boolean
 }
 
@@ -92,6 +100,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   health: () => request<HealthResponse>('/health'),
   cases: () => request<CaseSummary[]>('/cases'),
+  deleteCase: (caseId: string) => request<{ ok: boolean; case_id: string }>(`/cases/${caseId}`, {
+    method: 'DELETE',
+  }),
   game: (sessionId: string) => request<GameView>(`/game/${sessionId}`),
   newGame: (payload: { case_id: string; difficulty: Difficulty }) => request<GameView>('/game/new', {
     method: 'POST',

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   api,
+  assetUrl,
   CaseSummary,
   Difficulty,
   GameView,
@@ -210,6 +211,24 @@ function App() {
     runAction(() => api.accuse(game.session_id, accuse))
   }
 
+  async function deleteCase(caseId: string) {
+    if (loading) return
+    setLoading(true)
+    setError('')
+    try {
+      await api.deleteCase(caseId)
+      setCases((items) => items.filter((item) => item.id !== caseId))
+      if (game?.case.id === caseId) {
+        setGame(null)
+        window.localStorage.removeItem(lastSessionKey)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除案件失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   function askQuickQuestion(question: string) {
     if (!game || !activeNpcId || loading) return
     setSelectedNpcId(activeNpcId)
@@ -268,19 +287,21 @@ function App() {
 
           <section className="case-picker">
             {cases.map((item) => (
-              <button
-                key={item.id}
-                className="case-row"
-                onClick={() => startNewGame(item.id, item.difficulty)}
-                disabled={loading}
-              >
+              <div key={item.id} className="case-row">
+                <button
+                  className="case-row-main"
+                  onClick={() => startNewGame(item.id, item.difficulty)}
+                  disabled={loading}
+                >
                 <h2>{item.title}</h2>
                 <p>{item.created_label}</p>
                 <StatusPill status={item.status} label={item.updated_label} />
                 <span className="difficulty-pill">
                   {difficultyLabel(item.difficulty)}
                 </span>
-              </button>
+                </button>
+                <button className="delete-case-button" onClick={() => deleteCase(item.id)} disabled={loading}>删除</button>
+              </div>
             ))}
           </section>
 
@@ -316,7 +337,7 @@ function App() {
             }
             disabled={loading}
           >
-            <img src={scene.image_url} alt={scene.name} />
+            <img src={assetUrl(scene.image_url)} alt={scene.name} />
             <strong>{scene.name}</strong>
             <span>{scene.caption}</span>
           </button>
@@ -335,7 +356,7 @@ function App() {
               }
               onClick={() => setSelectedClueId(clue.id)}
             >
-              {clue.image_url && <img src={clue.image_url} alt={clue.name} />}
+              {clue.image_url && <img src={assetUrl(clue.image_url)} alt={clue.name} />}
               <strong>{clue.name}</strong>
               <small>{clue.location}</small>
             </button>
@@ -360,7 +381,7 @@ function App() {
               setAccuse({ suspect_id: npc.id })
             }}
           >
-            <img src={npc.avatar_url} alt={npc.name} />
+            <img src={assetUrl(npc.avatar_url)} alt={npc.name} />
             <strong>{npc.name}</strong>
             <p>{npc.public_profile}</p>
           </button>
@@ -542,7 +563,7 @@ function CoverStack({ images }: { images: string[] }) {
       {images.slice(0, 3).map((image, index) => (
         <img
           key={image}
-          src={image}
+          src={assetUrl(image)}
           alt="案件封面"
           style={{ left: `${index * 42}px` }}
         />

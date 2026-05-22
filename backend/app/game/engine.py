@@ -10,6 +10,7 @@ from uuid import uuid4
 from app.agents.deep_dm import DeepDMAgent
 from app.agents.npc_agent import NPCAgent
 from app.agents.qwen import QwenClient
+from app.agents.qwen_image import QwenImageClient
 from app.game.models import (
     AccuseRequest,
     ActionResponse,
@@ -162,6 +163,7 @@ class GameEngine:
         self.generated_cases: dict[str, CaseScript] = {}
         self.storage = GameStorage()
         self.qwen = QwenClient()
+        self.image = QwenImageClient()
         self.dm = DeepDMAgent()
         self._restore()
 
@@ -186,7 +188,21 @@ class GameEngine:
         return self.sessions[session_id].view()
 
     def get(self, session_id: str) -> GameView:
-        return self._session(session_id).view()
+        session = self._session(session_id)
+        if self._ensure_generated_images(session.script):
+            self._persist_script(session.script)
+            self._persist_session(session)
+        return session.view()
+
+    def delete_case(self, case_id: str) -> dict[str, bool | str]:
+        if case_id not in self.generated_cases:
+            raise KeyError("案件不存在。")
+        self.generated_cases.pop(case_id, None)
+        stale_session_ids = [session_id for session_id, session in self.sessions.items() if session.case.id == case_id]
+        for session_id in stale_session_ids:
+            self.sessions.pop(session_id, None)
+        self.storage.delete_case(case_id)
+        return {"ok": True, "case_id": case_id}
 
     def talk(self, session_id: str, request: PlayerMessage) -> ActionResponse:
         session = self._session(session_id)
@@ -330,6 +346,39 @@ class GameEngine:
         self.storage.save_case_script(script.summary.id, script.to_payload())
         self._index_script_memories(script)
 
+    def _ensure_generated_images(self, script: CaseScript) -> bool:
+        if not self.image.enabled:
+            return False
+        changed = False
+        if script.summary.cover_images and self._is_fallback_image(script.summary.cover_images[0]):
+            next_url = self.image.generate(
+                f"复古剧本杀案件封面，中文悬疑氛围，案件名《{script.summary.title}》，电影感构图，无文字水印",
+                script.summary.cover_images[0],
+            )
+            changed = changed or next_url != script.summary.cover_images[0]
+            script.summary.cover_images[0] = next_url
+        for scene in script.scene_images:
+            if self._is_fallback_image(scene.image_url):
+                next_url = self.image.generate(
+                    f"谋杀之谜游戏场景图，地点：{scene.location}，案件：{script.summary.title}，写实电影感，暗色悬疑灯光，无文字水印",
+                    scene.image_url,
+                )
+                changed = changed or next_url != scene.image_url
+                scene.image_url = next_url
+        for npc_id, data in script.npcs.items():
+            npc = data["state"]
+            if self._is_fallback_image(npc.avatar_url):
+                next_url = self.image.generate(
+                    f"剧本杀嫌疑人半身肖像，姓名{npc.name}，身份{npc.title}，{npc.public_profile}，复古悬疑，电影光影，正面肖像，无文字水印",
+                    npc.avatar_url,
+                )
+                changed = changed or next_url != npc.avatar_url
+                npc.avatar_url = next_url
+        return changed
+
+    def _is_fallback_image(self, image_url: str) -> bool:
+        return image_url.startswith("data:image/svg+xml")
+
     def _persist_session(self, session: GameSession) -> None:
         self.storage.save_session(session.session_id, session.case.id, session.to_payload())
 
@@ -363,7 +412,11 @@ class GameEngine:
         killer_id = self._text(truth_payload, "killer_id", "suspect_3")
         if killer_id not in {f"suspect_{index}" for index in range(1, 4)}:
             killer_id = "suspect_3"
-        cover = scene_fallback(title[:8], victim[:10])
+        cover_fallback = scene_fallback(title[:8], victim[:10])
+        cover = self.image.generate(
+            f"复古剧本杀案件封面，中文悬疑氛围，案件名《{title}》，死者 {victim}，电影感构图，无文字水印",
+            cover_fallback,
+        )
         summary = CaseSummary(
             id=case_id,
             title=title,
@@ -374,7 +427,16 @@ class GameEngine:
             cover_images=[cover, scene_fallback("证物", "关键线索"), scene_fallback("嫌疑人", "三人证词")],
         )
         scene_images = [
-            SceneImage(id=f"{case_id}_scene_{index}", name=name, location=name, image_url=scene_fallback(name[:8], "可搜证"), caption=f"调查{name}。")
+            SceneImage(
+                id=f"{case_id}_scene_{index}",
+                name=name,
+                location=name,
+                image_url=self.image.generate(
+                    f"谋杀之谜游戏场景图，地点：{name}，案件：{title}，写实电影感，暗色悬疑灯光，无文字水印",
+                    scene_fallback(name[:8], "可搜证"),
+                ),
+                caption=f"调查{name}。",
+            )
             for index, name in enumerate(locations[:3], start=1)
         ]
         npcs = {}
@@ -388,7 +450,10 @@ class GameEngine:
                     name=name,
                     title=npc_title,
                     public_profile=self._text(suspect, "public_profile", "与死者关系复杂，案发夜行踪存在疑点。"),
-                    avatar_url=svg_data(name[:1], npc_title, ["#39434d", "#46343c", "#2f3f36"][index - 1], ["#e7b85f", "#d68aac", "#9fdfb4"][index - 1]),
+                    avatar_url=self.image.generate(
+                        f"剧本杀嫌疑人半身肖像，姓名{name}，身份{npc_title}，{self._text(suspect, 'public_profile', '')}，复古悬疑，电影光影，正面肖像，无文字水印",
+                        svg_data(name[:1], npc_title, ["#39434d", "#46343c", "#2f3f36"][index - 1], ["#e7b85f", "#d68aac", "#9fdfb4"][index - 1]),
+                    ),
                 ),
                 "private_memory": self._text(suspect, "private_memory", "你有自己的秘密，但不能主动泄露。"),
             }

@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 import json
 
@@ -22,6 +23,7 @@ app.add_middleware(
 )
 
 engine = GameEngine()
+app.mount("/assets/generated", StaticFiles(directory=engine.image.assets_dir), name="generated-assets")
 
 
 @app.get("/api/health")
@@ -29,6 +31,10 @@ def health() -> dict[str, bool | str]:
     return {
         "ok": True,
         "qwen_enabled": engine.qwen.enabled,
+        "qwen_image_enabled": engine.image.enabled,
+        "qwen_image_model": engine.image.model,
+        "qwen_image_last_error": engine.image.last_error,
+        "llm_log_path": str(engine.qwen.logger.log_path),
         "deepagents_enabled": engine.dm.ready,
         "chroma_enabled": engine.storage.memory.available,
         "database": str(engine.storage.db_path),
@@ -48,6 +54,16 @@ def new_game(request: NewGameRequest | None = None):
 @app.get("/api/cases")
 def list_cases():
     return engine.list_cases()
+
+
+@app.delete("/api/cases/{case_id}")
+def delete_case(case_id: str):
+    try:
+        return engine.delete_case(case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/game/{session_id}")

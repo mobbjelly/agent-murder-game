@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from urllib.error import URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
+
+from app.agents.llm_logger import LLMCallLogger
 
 
 class QwenImageClient:
@@ -18,18 +19,57 @@ class QwenImageClient:
         self.assets_dir = Path(os.getenv("GENERATED_ASSETS_DIR", Path(__file__).resolve().parents[2] / "data" / "generated"))
         self.assets_url_prefix = os.getenv("GENERATED_ASSETS_URL_PREFIX", "/assets/generated")
         self.assets_dir.mkdir(parents=True, exist_ok=True)
+        self.last_error = ""
+        self.logger = LLMCallLogger()
 
     @property
     def enabled(self) -> bool:
         return bool(self.api_key)
 
     def generate(self, prompt: str, fallback_url: str) -> str:
+        started_at = self.logger.start()
         if not self.enabled:
+            self.last_error = "DASHSCOPE_API_KEY is not configured"
+            self.logger.write(
+                provider="dashscope",
+                model=self.model,
+                operation="image_generate",
+                started_at=started_at,
+                status="disabled",
+                prompt_preview=prompt,
+                response_preview=fallback_url,
+                error=self.last_error,
+                metadata={"size": self.size},
+            )
             return fallback_url
         try:
             image_url = self._request_image(prompt)
-            return self._download_image(image_url)
-        except Exception:
+            self.last_error = ""
+            local_url = self._download_image(image_url)
+            self.logger.write(
+                provider="dashscope",
+                model=self.model,
+                operation="image_generate",
+                started_at=started_at,
+                status="ok",
+                prompt_preview=prompt,
+                response_preview=local_url,
+                metadata={"size": self.size, "remote_url": image_url},
+            )
+            return local_url
+        except Exception as exc:
+            self.last_error = f"{exc.__class__.__name__}: {exc}"
+            self.logger.write(
+                provider="dashscope",
+                model=self.model,
+                operation="image_generate",
+                started_at=started_at,
+                status="fallback",
+                prompt_preview=prompt,
+                response_preview=fallback_url,
+                error=self.last_error,
+                metadata={"size": self.size},
+            )
             return fallback_url
 
     def _request_image(self, prompt: str) -> str:
