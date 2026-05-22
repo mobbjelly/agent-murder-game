@@ -58,6 +58,7 @@ export interface ChatMessage {
   speaker: string
   role: 'system' | 'player' | 'npc' | 'dm'
   content: string
+  target_npc_id?: string | null
 }
 
 export interface GameView {

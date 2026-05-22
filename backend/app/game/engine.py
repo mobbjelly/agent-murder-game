@@ -152,7 +152,7 @@ class GameSession:
             locations=self.script.locations,
             scene_images=self.script.scene_images,
             npcs=list(self.npcs.values()),
-            discovered_clues=[clue for clue in self.clues if clue.discovered],
+            discovered_clues=self.clues,
             chat=self.chat,
         )
 
@@ -194,6 +194,33 @@ class GameEngine:
             self._persist_session(session)
         return session.view()
 
+    def debug_npcs(self, session_id: str) -> dict:
+        session = self._session(session_id)
+        killer_id = session.script.truth.get("killer_id")
+        npcs = []
+        for npc_id, npc in session.npcs.items():
+            script_data = session.script.npcs[npc_id]
+            chat = [message.model_dump() for message in session.chat if message.target_npc_id == npc_id]
+            memories = self.storage.search_npc_memories(session.case.id, npc_id, npc.public_profile)
+            npcs.append({
+                "id": npc_id,
+                "name": npc.name,
+                "title": npc.title,
+                "public_profile": npc.public_profile,
+                "relation": npc.relation.model_dump(),
+                "private_memory": script_data["private_memory"],
+                "retrieved_memories": memories,
+                "chat": chat,
+                "is_killer": npc_id == killer_id,
+            })
+        return {
+            "session_id": session.session_id,
+            "case_id": session.case.id,
+            "case_title": session.case.title,
+            "truth": session.script.truth,
+            "npcs": npcs,
+        }
+
     def delete_case(self, case_id: str) -> dict[str, bool | str]:
         if case_id not in self.generated_cases:
             raise KeyError("案件不存在。")
@@ -208,11 +235,11 @@ class GameEngine:
         session = self._session(session_id)
         npc = self._npc(session, request.npc_id)
         session.phase = "investigate"
-        session.chat.append(ChatMessage(speaker="你", role="player", content=request.message))
+        session.chat.append(ChatMessage(speaker="你", role="player", content=request.message, target_npc_id=request.npc_id))
 
         self._adjust_relation(npc, request.message)
         answer = self._npc_reply(session, request.npc_id, request.message)
-        session.chat.append(ChatMessage(speaker=npc.name, role="npc", content=answer))
+        session.chat.append(ChatMessage(speaker=npc.name, role="npc", content=answer, target_npc_id=request.npc_id))
         self._persist_session(session)
         return ActionResponse(game=session.view(), result=answer)
 
@@ -220,7 +247,7 @@ class GameEngine:
         session = self._session(session_id)
         npc = self._npc(session, request.npc_id)
         session.phase = "investigate"
-        session.chat.append(ChatMessage(speaker="你", role="player", content=request.message))
+        session.chat.append(ChatMessage(speaker="你", role="player", content=request.message, target_npc_id=request.npc_id))
         self._adjust_relation(npc, request.message)
         answer_parts: list[str] = []
         yield {"type": "game", "game": session.view()}
@@ -228,7 +255,7 @@ class GameEngine:
             answer_parts.append(chunk)
             yield {"type": "chunk", "content": chunk}
         answer = "".join(answer_parts)
-        session.chat.append(ChatMessage(speaker=npc.name, role="npc", content=answer))
+        session.chat.append(ChatMessage(speaker=npc.name, role="npc", content=answer, target_npc_id=request.npc_id))
         self._persist_session(session)
         yield {"type": "game", "game": session.view()}
 
@@ -244,7 +271,7 @@ class GameEngine:
         else:
             clue.discovered = True
             result = f"你在{request.location}发现了【{clue.name}】：{clue.description}"
-        session.chat.append(ChatMessage(speaker="DM", role="dm", content=result))
+        session.chat.append(ChatMessage(speaker="DM", role="dm", content=result, target_npc_id=request.suspect_id))
 
         dm_hint = self.dm.summarize_scene(self._shared_context(session))
         session.chat.append(ChatMessage(speaker="DM", role="dm", content=dm_hint))
@@ -262,8 +289,8 @@ class GameEngine:
         npc.relation.fear = min(100, npc.relation.fear + 10)
         prompt = f"玩家向你展示证据【{clue.name}】：{clue.description}\n玩家说：{request.message}"
         answer = self._npc_reply(session, request.npc_id, prompt, confronted_clue=clue)
-        session.chat.append(ChatMessage(speaker="你", role="player", content=f"展示【{clue.name}】：{request.message}"))
-        session.chat.append(ChatMessage(speaker=npc.name, role="npc", content=answer))
+        session.chat.append(ChatMessage(speaker="你", role="player", content=f"展示【{clue.name}】：{request.message}", target_npc_id=request.npc_id))
+        session.chat.append(ChatMessage(speaker=npc.name, role="npc", content=answer, target_npc_id=request.npc_id))
         self._persist_session(session)
         return ActionResponse(game=session.view(), result=answer)
 
@@ -280,7 +307,7 @@ class GameEngine:
             f"你的指控对象：{suspect.name}。评分：{score}/100。\n"
             f"真相：凶手是{suspect.name if correct else self._npc(session, truth['killer_id']).name}。作案手法：{truth['method']} 动机：{truth['motive']}"
         )
-        session.chat.append(ChatMessage(speaker="你", role="player", content=f"我指控{suspect.name}。"))
+        session.chat.append(ChatMessage(speaker="你", role="player", content=f"我指控{suspect.name}。", target_npc_id=request.suspect_id))
         session.chat.append(ChatMessage(speaker="DM", role="dm", content=result))
         self._persist_session(session)
         return ActionResponse(game=session.view(), result=result)

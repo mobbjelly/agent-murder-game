@@ -56,6 +56,7 @@ class ChatMessage(BaseModel):
     speaker: str
     role: Literal["system", "player", "npc", "dm"]
     content: str
+    target_npc_id: str | None = None
 
 
 class GameView(BaseModel):

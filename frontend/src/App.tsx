@@ -27,7 +27,10 @@ function App() {
   const [selectedNpcId, setSelectedNpcId] = useState<string>('')
   const [activeNpcId, setActiveNpcId] = useState<string | null>(null)
   const [selectedClueId, setSelectedClueId] = useState<string>('')
-  const [message, setMessage] = useState<string>('劳伦斯喝茶时你在哪里？')
+  const [previewScene, setPreviewScene] = useState<
+    GameView['scene_images'][number] | null
+  >(null)
+  const [message, setMessage] = useState<string>('')
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
   const [accuse, setAccuse] = useState({ suspect_id: '' })
   const [loading, setLoading] = useState(false)
@@ -71,16 +74,6 @@ function App() {
   const activeNpc = useMemo(() => {
     return game?.npcs.find((npc) => npc.id === activeNpcId) ?? null
   }, [game, activeNpcId])
-
-  const stats = useMemo(() => {
-    const solved = cases.filter((item) => item.status === 'solved').length
-    const total = Math.max(cases.length, 1)
-    return {
-      solved,
-      rank: 771,
-      top: `${Math.round((1 - solved / total) * 25.5 * 10) / 10}%`,
-    }
-  }, [cases])
 
   async function startNewGame(caseId: string, nextDifficulty = difficulty) {
     setLoading(true)
@@ -240,18 +233,6 @@ function App() {
     return (
       <main className="case-list-page">
         <section className="case-shell">
-          <header className="player-stats">
-            <span>
-              已破案 <strong>{stats.solved}</strong>
-            </span>
-            <span>
-              排名 <strong>{stats.rank}</strong>
-            </span>
-            <span>
-              前 <strong>{stats.top}</strong>
-            </span>
-          </header>
-
           {error && <div className="error-banner">{error}</div>}
           {loading && (
             <GlobalProgress
@@ -293,20 +274,26 @@ function App() {
                   onClick={() => startNewGame(item.id, item.difficulty)}
                   disabled={loading}
                 >
-                <h2>{item.title}</h2>
-                <p>{item.created_label}</p>
-                <StatusPill status={item.status} label={item.updated_label} />
-                <span className="difficulty-pill">
-                  {difficultyLabel(item.difficulty)}
-                </span>
+                  <h2>{item.title}</h2>
+                  <p>{item.created_label}</p>
+                  <StatusPill status={item.status} label={item.updated_label} />
+                  <span className="difficulty-pill">
+                    {difficultyLabel(item.difficulty)}
+                  </span>
                 </button>
-                <button className="delete-case-button" onClick={() => deleteCase(item.id)} disabled={loading}>删除</button>
+                <button
+                  className="delete-case-button"
+                  onClick={() => deleteCase(item.id)}
+                  disabled={loading}
+                >
+                  删除
+                </button>
               </div>
             ))}
           </section>
 
           <p className="case-count-tip">
-            你还有 {Math.max(cases.length - stats.solved, 0)} 个案件待侦破！
+            你还有 {cases.length} 个案件待侦破！
           </p>
         </section>
       </main>
@@ -332,14 +319,13 @@ function App() {
                 '--tilt': `${index % 2 === 0 ? -4 : 3}deg`,
               } as React.CSSProperties
             }
-            onClick={() =>
-              runAction(() => api.search(game.session_id, scene.location))
-            }
+            onClick={() => setPreviewScene(scene)}
             disabled={loading}
           >
             <img src={assetUrl(scene.image_url)} alt={scene.name} />
             <strong>{scene.name}</strong>
             <span>{scene.caption}</span>
+            <small>点击查看大图</small>
           </button>
         ))}
       </section>
@@ -347,7 +333,7 @@ function App() {
       <section className="story-note paper-card">
         <p>{game.intro}</p>
         <div className="evidence-strip">
-          {game.discovered_clues.length === 0 && <span>尚未发现证据。</span>}
+          {game.discovered_clues.length === 0 && <span>暂无线索。</span>}
           {game.discovered_clues.map((clue) => (
             <button
               key={clue.id}
@@ -356,9 +342,12 @@ function App() {
               }
               onClick={() => setSelectedClueId(clue.id)}
             >
-              {clue.image_url && <img src={assetUrl(clue.image_url)} alt={clue.name} />}
+              {clue.image_url && (
+                <img src={assetUrl(clue.image_url)} alt={clue.name} />
+              )}
               <strong>{clue.name}</strong>
               <small>{clue.location}</small>
+              <p>{clue.description}</p>
             </button>
           ))}
         </div>
@@ -405,6 +394,13 @@ function App() {
           onQuickQuestion={askQuickQuestion}
         />
       )}
+
+      {previewScene && (
+        <ScenePreviewModal
+          scene={previewScene}
+          onClose={() => setPreviewScene(null)}
+        />
+      )}
     </main>
   )
 }
@@ -428,7 +424,11 @@ interface SuspectModalProps {
 function SuspectModal(props: SuspectModalProps) {
   const { npc, clues, chat, selectedClueId, message, loading } = props
   const modalChat = chat
-    .filter((item) => item.role === 'player' || item.speaker === npc.name)
+    .filter(
+      (item) =>
+        item.target_npc_id === npc.id ||
+        (!item.target_npc_id && item.speaker === npc.name),
+    )
     .slice(-8)
   return (
     <div className="modal-backdrop">
@@ -515,6 +515,32 @@ function SuspectModal(props: SuspectModalProps) {
             </button>
           </form>
         </section>
+      </section>
+    </div>
+  )
+}
+
+function ScenePreviewModal({
+  scene,
+  onClose,
+}: {
+  scene: GameView['scene_images'][number]
+  onClose: () => void
+}) {
+  return (
+    <div className="image-preview-backdrop" onClick={onClose}>
+      <section
+        className="image-preview-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button className="close-button" onClick={onClose}>
+          ×
+        </button>
+        <img src={assetUrl(scene.image_url)} alt={scene.name} />
+        <div className="image-preview-info">
+          <h2>{scene.name}</h2>
+          <p>{scene.caption}</p>
+        </div>
       </section>
     </div>
   )

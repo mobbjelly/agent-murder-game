@@ -12,7 +12,7 @@ from app.agents.llm_logger import LLMCallLogger
 class QwenImageClient:
     def __init__(self) -> None:
         self.api_key = os.getenv("DASHSCOPE_API_KEY")
-        self.model = os.getenv("QWEN_IMAGE_MODEL", "qwen-image-2.0-pro")
+        self.model = os.getenv("QWEN_IMAGE_MODEL", "qwen-image-2.0")
         base_url = os.getenv("DASHSCOPE_IMAGE_BASE_URL", "https://dashscope.aliyuncs.com/api/v1")
         self.endpoint = f"{base_url.rstrip('/')}/services/aigc/multimodal-generation/generation"
         self.size = os.getenv("QWEN_IMAGE_SIZE", "1328*1328")
