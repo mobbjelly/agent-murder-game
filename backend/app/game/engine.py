@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from collections.abc import Iterator
 from datetime import datetime
 import json
 import re
 from uuid import uuid4
 
 from app.agents.deep_dm import DeepDMAgent
+from app.agents.npc_agent import NPCAgent
 from app.agents.qwen import QwenClient
 from app.game.models import (
     AccuseRequest,
@@ -23,7 +25,7 @@ from app.game.models import (
     SearchRequest,
     SceneImage,
 )
-from app.game.script import CASE, CASES, CLUES, INTRO, LOCATIONS, NPCS, SCENE_IMAGES, TRUTH, svg_data
+from app.game.media import svg_data
 from app.game.storage import GameStorage
 
 
@@ -82,30 +84,22 @@ class CaseScript:
         )
 
 
-STATIC_SCRIPT = CaseScript(
-    summary=CASE,
-    intro=INTRO,
-    locations=LOCATIONS,
-    scene_images=SCENE_IMAGES,
-    npcs=NPCS,
-    clues=CLUES,
-    truth=TRUTH,
-)
-
-
 def scene_fallback(title: str, subtitle: str) -> str:
     return svg_data(title, subtitle, "#3b332d", "#d0a35f")
 
 
 class GameSession:
-    def __init__(self, session_id: str, script: CaseScript) -> None:
+    def __init__(self, session_id: str, script: CaseScript, storage: GameStorage, qwen: QwenClient) -> None:
         self.session_id = session_id
         self.script = deepcopy(script)
+        self.storage = storage
+        self.qwen = qwen
         self.case = deepcopy(script.summary)
         self.phase = "intro"
         self.npcs: dict[str, NPCState] = {
             npc_id: deepcopy(data["state"]) for npc_id, data in self.script.npcs.items()
         }
+        self.npc_agents = self._build_agents()
         self.clues: list[Clue] = deepcopy(self.script.clues)
         self.chat: list[ChatMessage] = [
             ChatMessage(speaker="DM", role="dm", content=self.script.intro),
@@ -127,14 +121,26 @@ class GameSession:
         }
 
     @classmethod
-    def from_payload(cls, payload: dict, script: CaseScript) -> "GameSession":
-        session = cls(payload["session_id"], script)
+    def from_payload(cls, payload: dict, script: CaseScript, storage: GameStorage, qwen: QwenClient) -> "GameSession":
+        session = cls(payload["session_id"], script, storage, qwen)
         session.case = CaseSummary(**payload["case"])
         session.phase = payload["phase"]
         session.npcs = {npc_id: NPCState(**data) for npc_id, data in payload["npcs"].items()}
+        session.npc_agents = session._build_agents()
         session.clues = [Clue(**item) for item in payload["clues"]]
         session.chat = [ChatMessage(**item) for item in payload["chat"]]
         return session
+
+    def agent(self, npc_id: str) -> NPCAgent:
+        if npc_id not in self.npc_agents:
+            raise KeyError("NPC 不存在。")
+        return self.npc_agents[npc_id]
+
+    def _build_agents(self) -> dict[str, NPCAgent]:
+        return {
+            npc_id: NPCAgent(self.case.id, npc_id, npc, self.storage, self.qwen)
+            for npc_id, npc in self.npcs.items()
+        }
 
     def view(self) -> GameView:
         return GameView(
@@ -161,7 +167,7 @@ class GameEngine:
 
     def list_cases(self) -> list[CaseSummary]:
         active_case_ids = {session.case.id for session in self.sessions.values()}
-        cases = deepcopy(CASES) + [deepcopy(script.summary) for script in self.generated_cases.values()]
+        cases = [deepcopy(script.summary) for script in self.generated_cases.values()]
         for case in cases:
             if case.id in active_case_ids:
                 case.updated_label = "调查中"
@@ -174,7 +180,7 @@ class GameEngine:
         script.summary.status = "unsolved"
         script.summary.updated_label = "未侦破"
         session_id = str(uuid4())
-        self.sessions[session_id] = GameSession(session_id, script)
+        self.sessions[session_id] = GameSession(session_id, script, self.storage, self.qwen)
         self._persist_script(script)
         self._persist_session(self.sessions[session_id])
         return self.sessions[session_id].view()
@@ -193,6 +199,22 @@ class GameEngine:
         session.chat.append(ChatMessage(speaker=npc.name, role="npc", content=answer))
         self._persist_session(session)
         return ActionResponse(game=session.view(), result=answer)
+
+    def stream_talk(self, session_id: str, request: PlayerMessage) -> Iterator[dict[str, str | GameView]]:
+        session = self._session(session_id)
+        npc = self._npc(session, request.npc_id)
+        session.phase = "investigate"
+        session.chat.append(ChatMessage(speaker="你", role="player", content=request.message))
+        self._adjust_relation(npc, request.message)
+        answer_parts: list[str] = []
+        yield {"type": "game", "game": session.view()}
+        for chunk in session.agent(request.npc_id).stream_reply(request.message, self._shared_context(session)):
+            answer_parts.append(chunk)
+            yield {"type": "chunk", "content": chunk}
+        answer = "".join(answer_parts)
+        session.chat.append(ChatMessage(speaker=npc.name, role="npc", content=answer))
+        self._persist_session(session)
+        yield {"type": "game", "game": session.view()}
 
     def search(self, session_id: str, request: SearchRequest) -> ActionResponse:
         session = self._session(session_id)
@@ -258,25 +280,7 @@ class GameEngine:
         confronted_clue: Clue | None = None,
     ) -> str:
         npc = self._npc(session, npc_id)
-        private_memories = self.storage.search_npc_memories(session.case.id, npc_id, player_input)
-        private_memory = "\n".join(private_memories) or session.script.npcs[npc_id]["private_memory"]
-        shared_context = self._shared_context(session)
-        clue_line = f"正在被对质的证据：{confronted_clue.name} - {confronted_clue.description}" if confronted_clue else ""
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    f"你正在扮演 AI 剧本杀 NPC：{npc.name}（{npc.title}）。"
-                    "必须保持角色，不要跳出游戏，不要泄露其他 NPC 的私有记忆。"
-                    "根据证据和关系值决定是否撒谎、回避或松口。回答控制在 120 字内。\n"
-                    f"你的私有记忆：{private_memory}\n"
-                    f"当前关系值：信任 {npc.relation.trust}，警惕 {npc.relation.fear}，压力 {npc.relation.pressure}。\n"
-                    f"共享案情：{shared_context}\n{clue_line}"
-                ),
-            },
-            {"role": "user", "content": player_input},
-        ]
-        return self.qwen.chat(messages)
+        return session.agent(npc_id).reply(player_input, self._shared_context(session), confronted_clue)
 
     def _shared_context(self, session: GameSession) -> str:
         discovered = [f"{clue.name}: {clue.description}" for clue in session.clues if clue.discovered]
@@ -301,33 +305,29 @@ class GameEngine:
             return script
         if case_id in self.generated_cases:
             return deepcopy(self.generated_cases[case_id])
-        if case_id == CASE.id:
-            return deepcopy(STATIC_SCRIPT)
         raise KeyError("案件不存在。")
 
     def _restore(self) -> None:
         for case_id, payload in self.storage.load_case_scripts().items():
-            if case_id == CASE.id:
-                continue
             script = CaseScript.from_payload(payload)
             self.generated_cases[case_id] = script
             self._index_script_memories(script)
         for session_id, payload in self.storage.load_sessions().items():
             case_id = payload["case"]["id"]
-            script = self._script_for_restore(case_id)
-            self.sessions[session_id] = GameSession.from_payload(payload, script)
+            try:
+                script = self._script_for_restore(case_id)
+            except KeyError:
+                continue
+            self.sessions[session_id] = GameSession.from_payload(payload, script, self.storage, self.qwen)
 
     def _script_for_restore(self, case_id: str) -> CaseScript:
-        if case_id == CASE.id:
-            return deepcopy(STATIC_SCRIPT)
         if case_id in self.generated_cases:
             return deepcopy(self.generated_cases[case_id])
         raise KeyError("案件不存在。")
 
     def _persist_script(self, script: CaseScript) -> None:
-        if script.summary.id != CASE.id:
-            self.generated_cases[script.summary.id] = deepcopy(script)
-            self.storage.save_case_script(script.summary.id, script.to_payload())
+        self.generated_cases[script.summary.id] = deepcopy(script)
+        self.storage.save_case_script(script.summary.id, script.to_payload())
         self._index_script_memories(script)
 
     def _persist_session(self, session: GameSession) -> None:

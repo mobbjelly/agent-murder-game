@@ -5,3 +5,4 @@ python-dotenv>=1.0.1
 dashscope>=1.23.0
 deepagents>=0.5.7,<0.6.0
 langchain-openai>=0.3.0
+chromadb>=0.5.23

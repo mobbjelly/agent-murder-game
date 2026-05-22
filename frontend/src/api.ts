@@ -101,6 +101,35 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(payload),
   }),
+  streamTalk: async (
+    sessionId: string,
+    payload: { npc_id: string; message: string },
+    onEvent: (event: { type: string; content?: string; game?: GameView; message?: string }) => void,
+  ) => {
+    const response = await fetch(`${API_BASE}/game/${sessionId}/talk/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok || !response.body) {
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+      throw new Error(error.detail ?? 'Request failed')
+    }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const events = buffer.split('\n\n')
+      buffer = events.pop() ?? ''
+      for (const event of events) {
+        const line = event.split('\n').find((item) => item.startsWith('data: '))
+        if (line) onEvent(JSON.parse(line.slice(6)))
+      }
+    }
+  },
   search: (sessionId: string, location: string) => request<ActionResponse>(`/game/${sessionId}/search`, {
     method: 'POST',
     body: JSON.stringify({ location }),

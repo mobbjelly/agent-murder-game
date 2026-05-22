@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
+import json
 
 from app.game.engine import GameEngine
 from app.game.models import AccuseRequest, ConfrontRequest, NewGameRequest, PlayerMessage, SearchRequest
@@ -28,6 +30,7 @@ def health() -> dict[str, bool | str]:
         "ok": True,
         "qwen_enabled": engine.qwen.enabled,
         "deepagents_enabled": engine.dm.ready,
+        "chroma_enabled": engine.storage.memory.available,
         "database": str(engine.storage.db_path),
     }
 
@@ -37,6 +40,8 @@ def new_game(request: NewGameRequest | None = None):
     try:
         return engine.new_game(request)
     except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -51,6 +56,8 @@ def get_game(session_id: str):
         return engine.get(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/game/{session_id}/talk")
@@ -59,6 +66,23 @@ def talk(session_id: str, request: PlayerMessage):
         return engine.talk(session_id, request)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/game/{session_id}/talk/stream")
+def stream_talk(session_id: str, request: PlayerMessage):
+    def events():
+        try:
+            for event in engine.stream_talk(session_id, request):
+                payload = event.copy()
+                if payload.get("game") is not None:
+                    payload["game"] = payload["game"].model_dump()
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        except KeyError as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
+        except RuntimeError as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 @app.post("/api/game/{session_id}/search")
@@ -76,6 +100,8 @@ def confront(session_id: str, request: ConfrontRequest):
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
