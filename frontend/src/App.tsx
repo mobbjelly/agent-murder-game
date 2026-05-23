@@ -33,6 +33,7 @@ function App() {
   >(null)
   const [message, setMessage] = useState<string>('')
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
+  const [difficultyModalOpen, setDifficultyModalOpen] = useState(false)
   const [accuse, setAccuse] = useState({ suspect_id: '' })
   const [loading, setLoading] = useState(false)
   const [generationProgress, setGenerationProgress] = useState(0)
@@ -274,31 +275,6 @@ function App() {
             />
           )}
 
-          <section className="new-case-panel top-new-case">
-            <label>
-              难度
-              <select
-                value={difficulty}
-                onChange={(event) =>
-                  setDifficulty(event.target.value as Difficulty)
-                }
-              >
-                {difficultyOptions.map((item) => (
-                  <option key={item} value={item}>
-                    {difficultyLabel(item)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="primary-action"
-              onClick={() => startNewGame('dynamic', difficulty)}
-              disabled={loading}
-            >
-              {loading ? '生成案件中…' : '生成新案件'}
-            </button>
-          </section>
-
           <section className="case-picker">
             {cases.map((item) => (
               <div key={item.id} className="case-row">
@@ -314,19 +290,31 @@ function App() {
                     {difficultyLabel(item.difficulty)}
                   </span>
                 </button>
-                <button
-                  className="delete-case-button"
-                  onClick={() => deleteCase(item.id)}
-                  disabled={loading}
-                >
-                  删除
-                </button>
               </div>
             ))}
           </section>
 
           <p className="case-count-tip">你还有 {cases.length} 个案件待侦破！</p>
+          <button
+            className="primary-action solve-new-case-button"
+            onClick={() => setDifficultyModalOpen(true)}
+            disabled={loading}
+          >
+            {loading ? '生成案件中…' : '解决新案件'}
+          </button>
         </section>
+        {difficultyModalOpen && (
+          <DifficultyModal
+            difficulty={difficulty}
+            loading={loading}
+            onChange={setDifficulty}
+            onClose={() => setDifficultyModalOpen(false)}
+            onConfirm={() => {
+              setDifficultyModalOpen(false)
+              startNewGame('dynamic', difficulty)
+            }}
+          />
+        )}
         {tutorialEnabled && currentTutorial && (
           <TutorialOverlay
             step={currentTutorial}
@@ -376,8 +364,6 @@ function App() {
           >
             <img src={assetUrl(scene.image_url)} alt={scene.name} />
             <strong>{scene.name}</strong>
-            <span>{scene.caption}</span>
-            <small>点击查看大图</small>
           </button>
         ))}
       </section>
@@ -626,10 +612,83 @@ function ScenePreviewModal({
           ×
         </button>
         <img src={assetUrl(scene.image_url)} alt={scene.name} />
-        <div className="image-preview-info">
-          <h2>{scene.name}</h2>
-          <p>{scene.caption}</p>
+      </section>
+    </div>
+  )
+}
+
+function DifficultyModal({
+  difficulty,
+  loading,
+  onChange,
+  onClose,
+  onConfirm,
+}: {
+  difficulty: Difficulty
+  loading: boolean
+  onChange: (difficulty: Difficulty) => void
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const options = [
+    {
+      value: 'easy' as Difficulty,
+      icon: '☻',
+      title: '简单',
+      description: '嫌疑人更容易露出破绽，适合第一次体验。',
+    },
+    {
+      value: 'medium' as Difficulty,
+      icon: '♟',
+      title: '中等',
+      description: '线索逐步浮现，需要认真追问和对质。',
+    },
+    {
+      value: 'hard' as Difficulty,
+      icon: '☹',
+      title: '困难',
+      description: '谎言更隐蔽，需要反复施压才能发现漏洞。',
+    },
+  ]
+  return (
+    <div className="difficulty-backdrop" onClick={onClose}>
+      <section
+        className="difficulty-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button className="difficulty-close" onClick={onClose}>
+          ×
+        </button>
+        <h2>选择难度</h2>
+        <p>难度会影响嫌疑人的防备程度、线索显露速度和回答的含糊程度。</p>
+        <div className="difficulty-options">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              className={
+                difficulty === option.value
+                  ? `difficulty-option ${option.value} active`
+                  : `difficulty-option ${option.value}`
+              }
+              onClick={() => onChange(option.value)}
+              type="button"
+            >
+              <span className="difficulty-icon">{option.icon}</span>
+              <span className="difficulty-copy">
+                <strong>{option.title}</strong>
+                <small>{option.description}</small>
+              </span>
+              <span className="difficulty-radio" />
+            </button>
+          ))}
         </div>
+        <button
+          className="difficulty-confirm"
+          onClick={onConfirm}
+          disabled={loading}
+        >
+          {loading ? '生成中…' : '生成案件'}
+        </button>
       </section>
     </div>
   )
@@ -775,21 +834,6 @@ function GlobalProgress({ value, label }: { value: number; label: string }) {
       <div className="global-progress-track">
         <div style={{ width: `${value}%` }} />
       </div>
-    </div>
-  )
-}
-
-function CoverStack({ images }: { images: string[] }) {
-  return (
-    <div className="cover-stack">
-      {images.slice(0, 3).map((image, index) => (
-        <img
-          key={image}
-          src={assetUrl(image)}
-          alt="案件封面"
-          style={{ left: `${index * 42}px` }}
-        />
-      ))}
     </div>
   )
 }
