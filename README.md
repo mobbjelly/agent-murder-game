@@ -43,14 +43,27 @@ npm run dev
 
 ## Docker Compose 部署
 
-先准备环境变量文件：
+### 1. 准备环境变量
+
+Docker Compose 会读取项目根目录的 `.env.example` 和可选的 `.env`。
+
+首次部署建议复制一份根目录 `.env`：
 
 ```bash
 cp .env.example .env
-# 可选：填入 DASHSCOPE_API_KEY；不填时系统会使用本地 mock 回复
 ```
 
-启动服务：
+如果需要动态生成案件或生成图片，请在根目录 `.env` 中配置：
+
+```bash
+DASHSCOPE_API_KEY=你的 DashScope API Key
+```
+
+不配置 `DASHSCOPE_API_KEY` 时，普通 NPC 对话会使用本地 mock 回复；但“动态案件生成”会提示需要配置 API Key。
+
+### 2. 启动服务
+
+在项目根目录执行：
 
 ```bash
 docker compose up -d --build
@@ -58,7 +71,9 @@ docker compose up -d --build
 
 打开 `http://localhost:18080`。
 
-默认端口不会占用常见的 `80` / `8000`：
+### 3. 端口说明
+
+默认宿主机端口不会占用常见的 `80` / `8000`：
 
 - 前端：宿主机 `18080` -> 容器 `80`。
 - 后端：宿主机 `18000` -> 容器 `8000`。
@@ -70,18 +85,48 @@ FRONTEND_PORT=18080
 BACKEND_PORT=18000
 ```
 
-常用命令：
+前端生产环境默认请求同源 `/api`，由 Nginx 反向代理到 Docker 网络内的 `backend:8000`，不会直接请求浏览器本机的 `localhost:8000`。
+
+### 4. 常用命令
 
 ```bash
 docker compose logs -f
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose ps
 docker compose down
 ```
+
+修改 `.env` 后，需要重建或重新创建后端容器：
+
+```bash
+docker compose up -d --force-recreate backend frontend
+```
+
+检查 API Key 是否进入容器：
+
+```bash
+docker compose exec backend printenv DASHSCOPE_API_KEY
+```
+
+### 5. 镜像构建说明
 
 Compose 会启动：
 
 - `backend`：FastAPI 服务，容器内监听 `8000`，默认映射到宿主机 `18000`。
-- `frontend`：Nginx 托管前端静态文件，并反向代理 `/api` 和 `/assets/generated` 到后端。
+- `frontend`：Nginx 托管前端静态文件，并反向代理 `/api` 和 `/assets/generated` 到后端；生成案件等长请求代理超时为 10 分钟。
 - `backend-data`：持久化 SQLite、Chroma、生成图片和 LLM 调用日志。
+
+后端镜像基于 `python:3.12-slim`：
+
+- Debian apt 源默认替换为清华源：`https://mirrors.tuna.tsinghua.edu.cn/debian`。
+- pip 安装默认使用阿里云 PyPI 镜像：`https://mirrors.aliyun.com/pypi/simple/`。
+
+如动态案件生成耗时较长，前端 Nginx 已将 `/api` 代理读取超时设置为 `600s`。如果仍然出现 `504 Gateway Time-out`，请查看后端日志确认 DashScope 或图片生成调用是否仍在运行：
+
+```bash
+docker compose logs -f backend
+```
 
 ## 环境变量
 
@@ -100,6 +145,7 @@ Compose 会启动：
 ## 项目结构
 
 ```text
+backend/Dockerfile               后端 Docker 镜像
 backend/app/main.py              FastAPI 入口
 backend/app/game/models.py       Pydantic 请求/响应模型
 backend/app/game/engine.py       游戏状态机与工具逻辑
@@ -109,6 +155,10 @@ backend/app/agents/npc_agent.py  独立 NPC Agent 与私有记忆注入
 backend/app/agents/qwen.py       DashScope SDK 适配
 backend/app/agents/qwen_image.py Qwen-Image-2.0 图片生成适配
 backend/app/agents/deep_dm.py    DeepAgents 可选 DM 编排层
-frontend/src/App.jsx             React 主界面
-frontend/src/api.js              后端 API client
+frontend/Dockerfile              前端 Docker 多阶段构建
+frontend/nginx.conf              前端静态服务与反向代理配置
+frontend/vite.config.ts          Vite 开发代理配置
+frontend/src/App.tsx             React 主界面
+frontend/src/api.ts              后端 API client
+docker-compose.yml               Docker Compose 编排文件
 ```

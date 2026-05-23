@@ -9,8 +9,8 @@ export function getTutorialSteps(inGame: boolean): TutorialStep[] {
     return [
       {
         title: '欢迎来到 AI 剧本杀',
-        body: '先点击“解决新案件”，选择难度后，系统会从为你载入一个案件。',
-        tip: '建议第一次选择“中等”，体验最完整。',
+        body: '案件列表里已经为你准备了一个体验案件。直接点击列表中的案件即可开始调查。',
+        tip: '“解决新案件”用于领取其他案件，不需要第一次就点击。',
       },
       {
         title: '案件会保存',
