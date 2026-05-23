@@ -374,9 +374,7 @@ select, input, textarea {
   min-height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
-  background: linear-gradient(#3f2e25 0 10px, #b18362 10px calc(100% - 10px), #3f2e25 calc(100% - 10px));
-  border-top: 8px solid #2d211c;
-  border-bottom: 8px solid #2d211c;
+  background:#b18362;
   padding: 150px clamp(28px, 4vw, 72px) 42px;
   display: grid;
   grid-template-columns: minmax(220px, 300px) minmax(320px, 420px) minmax(360px, 620px);

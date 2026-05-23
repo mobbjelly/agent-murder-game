@@ -383,7 +383,7 @@ class GameEngine:
             if script.summary.difficulty == difficulty and script.summary.status == "unsolved" and not self._case_has_session(script.summary.id)
         ]
         if not candidates:
-            raise ValueError(f"没有可用的{self._difficulty_label(difficulty)}预生成案件，请先到开发者后台生成。")
+            raise ValueError(f"暂无{self._difficulty_label(difficulty)}案件，请联系客服。")
         return deepcopy(candidates[0])
 
     def _default_available_case(self, exclude_case_ids: set[str]) -> CaseSummary | None:

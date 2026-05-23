@@ -68,16 +68,21 @@ function App() {
       })
       .catch((err: Error) => setError(err.message))
     if (isAdminPage) return
-    const lastSessionId = window.localStorage.getItem(lastSessionKey)
+    const routeSessionId = sessionIdFromPath()
+    const lastSessionId = routeSessionId ?? window.localStorage.getItem(lastSessionKey)
     if (lastSessionId) {
       api
         .game(lastSessionId)
         .then((restoredGame) => {
           setGame(restoredGame)
+          syncGameUrl(restoredGame.session_id)
           setSelectedNpcId(restoredGame.npcs[0]?.id ?? '')
           setAccuse({ suspect_id: restoredGame.npcs[0]?.id ?? '' })
         })
-        .catch(() => window.localStorage.removeItem(lastSessionKey))
+        .catch(() => {
+          window.localStorage.removeItem(lastSessionKey)
+          if (routeSessionId) syncHomeUrl()
+        })
     }
   }, [isAdminPage, lastSessionKey])
 
@@ -126,6 +131,7 @@ function App() {
       setGenerationLabel('案件已载入')
       setGame(nextGame)
       window.localStorage.setItem(lastSessionKey, nextGame.session_id)
+      syncGameUrl(nextGame.session_id)
       setCases((items) => mergeCase(items, nextGame.case))
       setSelectedNpcId(nextGame.npcs[0]?.id ?? '')
       setActiveNpcId(null)
@@ -333,6 +339,7 @@ function App() {
       setCases((items) => items.filter((item) => item.id !== caseId))
       if (game?.case.id === caseId) {
         setGame(null)
+        syncHomeUrl()
         window.localStorage.removeItem(lastSessionKey)
       }
     } catch (err) {
@@ -477,7 +484,13 @@ function App() {
         onChange={setTutorialMode}
         floating
       />
-      <button className="back-button" onClick={() => setGame(null)}>
+      <button
+        className="back-button"
+        onClick={() => {
+          setGame(null)
+          syncHomeUrl()
+        }}
+      >
         ‹
       </button>
       <div className="case-title tape-label">{game.case.title}</div>
@@ -605,6 +618,24 @@ function App() {
       )}
     </main>
   )
+}
+
+function sessionIdFromPath() {
+  const match = window.location.pathname.match(/^\/game\/([^/]+)$/)
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+function syncGameUrl(sessionId: string) {
+  const nextPath = `/game/${encodeURIComponent(sessionId)}`
+  if (window.location.pathname !== nextPath) {
+    window.history.pushState(null, '', nextPath)
+  }
+}
+
+function syncHomeUrl() {
+  if (window.location.pathname !== '/') {
+    window.history.pushState(null, '', '/')
+  }
 }
 
 export default App
