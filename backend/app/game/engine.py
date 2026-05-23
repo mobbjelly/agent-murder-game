@@ -90,8 +90,9 @@ def scene_fallback(title: str, subtitle: str) -> str:
 
 
 class GameSession:
-    def __init__(self, session_id: str, script: CaseScript, storage: GameStorage, qwen: QwenClient) -> None:
+    def __init__(self, session_id: str, client_id: str, script: CaseScript, storage: GameStorage, qwen: QwenClient) -> None:
         self.session_id = session_id
+        self.client_id = client_id or "global"
         self.script = deepcopy(script)
         self.storage = storage
         self.qwen = qwen
@@ -114,6 +115,7 @@ class GameSession:
     def to_payload(self) -> dict:
         return {
             "session_id": self.session_id,
+            "client_id": self.client_id,
             "case": self.case.model_dump(),
             "phase": self.phase,
             "npcs": {npc_id: npc.model_dump() for npc_id, npc in self.npcs.items()},
@@ -123,7 +125,7 @@ class GameSession:
 
     @classmethod
     def from_payload(cls, payload: dict, script: CaseScript, storage: GameStorage, qwen: QwenClient) -> "GameSession":
-        session = cls(payload["session_id"], script, storage, qwen)
+        session = cls(payload["session_id"], payload.get("client_id") or "global", script, storage, qwen)
         session.case = CaseSummary(**payload["case"])
         session.phase = payload["phase"]
         session.npcs = {npc_id: NPCState(**data) for npc_id, data in payload["npcs"].items()}
@@ -167,7 +169,19 @@ class GameEngine:
         self.dm = DeepDMAgent()
         self._restore()
 
-    def list_cases(self) -> list[CaseSummary]:
+    def list_cases(self, client_id: str) -> list[CaseSummary]:
+        active_case_ids = {session.case.id for session in self.sessions.values() if session.client_id == client_id}
+        cases = [
+            deepcopy(script.summary)
+            for script in self.generated_cases.values()
+            if script.summary.id in active_case_ids
+        ]
+        for case in cases:
+            if case.id in active_case_ids:
+                case.updated_label = "调查中"
+        return cases
+
+    def list_admin_cases(self) -> list[CaseSummary]:
         active_case_ids = {session.case.id for session in self.sessions.values()}
         cases = [deepcopy(script.summary) for script in self.generated_cases.values()]
         for case in cases:
@@ -178,24 +192,28 @@ class GameEngine:
     def new_game(self, request: NewGameRequest | None = None) -> GameView:
         request = request or NewGameRequest()
         script = self._script(request.case_id, request.difficulty)
-        script.summary.difficulty = request.difficulty
         script.summary.status = "unsolved"
         script.summary.updated_label = "未侦破"
         session_id = str(uuid4())
-        self.sessions[session_id] = GameSession(session_id, script, self.storage, self.qwen)
+        self.sessions[session_id] = GameSession(session_id, self._client_id(request.client_id), script, self.storage, self.qwen)
         self._persist_script(script)
         self._persist_session(self.sessions[session_id])
         return self.sessions[session_id].view()
 
-    def get(self, session_id: str) -> GameView:
-        session = self._session(session_id)
+    def generate_case(self, difficulty: Difficulty) -> CaseScript:
+        script = self._generate_case_with_llm(difficulty)
+        self._persist_script(script)
+        return deepcopy(script)
+
+    def get(self, session_id: str, client_id: str) -> GameView:
+        session = self._session(session_id, client_id)
         if self._ensure_generated_images(session.script):
             self._persist_script(session.script)
             self._persist_session(session)
         return session.view()
 
-    def debug_npcs(self, session_id: str) -> dict:
-        session = self._session(session_id)
+    def debug_npcs(self, session_id: str, client_id: str = "") -> dict:
+        session = self._session(session_id, client_id or None)
         killer_id = session.script.truth.get("killer_id")
         npcs = []
         for npc_id, npc in session.npcs.items():
@@ -231,8 +249,19 @@ class GameEngine:
         self.storage.delete_case(case_id)
         return {"ok": True, "case_id": case_id}
 
-    def talk(self, session_id: str, request: PlayerMessage) -> ActionResponse:
-        session = self._session(session_id)
+    def delete_client_case(self, client_id: str, case_id: str) -> dict[str, bool | str]:
+        stale_session_ids = [
+            session_id
+            for session_id, session in self.sessions.items()
+            if session.client_id == client_id and session.case.id == case_id
+        ]
+        for session_id in stale_session_ids:
+            self.sessions.pop(session_id, None)
+        self.storage.delete_client_case(client_id, case_id)
+        return {"ok": True, "case_id": case_id}
+
+    def talk(self, session_id: str, request: PlayerMessage, client_id: str) -> ActionResponse:
+        session = self._session(session_id, client_id)
         npc = self._npc(session, request.npc_id)
         session.phase = "investigate"
         session.chat.append(ChatMessage(speaker="你", role="player", content=request.message, target_npc_id=request.npc_id))
@@ -243,8 +272,8 @@ class GameEngine:
         self._persist_session(session)
         return ActionResponse(game=session.view(), result=answer)
 
-    def stream_talk(self, session_id: str, request: PlayerMessage) -> Iterator[dict[str, str | GameView]]:
-        session = self._session(session_id)
+    def stream_talk(self, session_id: str, request: PlayerMessage, client_id: str) -> Iterator[dict[str, str | GameView]]:
+        session = self._session(session_id, client_id)
         npc = self._npc(session, request.npc_id)
         session.phase = "investigate"
         session.chat.append(ChatMessage(speaker="你", role="player", content=request.message, target_npc_id=request.npc_id))
@@ -259,8 +288,8 @@ class GameEngine:
         self._persist_session(session)
         yield {"type": "game", "game": session.view()}
 
-    def search(self, session_id: str, request: SearchRequest) -> ActionResponse:
-        session = self._session(session_id)
+    def search(self, session_id: str, request: SearchRequest, client_id: str) -> ActionResponse:
+        session = self._session(session_id, client_id)
         session.phase = "investigate"
         clue = next(
             (item for item in self.clues_for(session, request.location) if not item.discovered),
@@ -278,8 +307,8 @@ class GameEngine:
         self._persist_session(session)
         return ActionResponse(game=session.view(), result=result)
 
-    def confront(self, session_id: str, request: ConfrontRequest) -> ActionResponse:
-        session = self._session(session_id)
+    def confront(self, session_id: str, request: ConfrontRequest, client_id: str) -> ActionResponse:
+        session = self._session(session_id, client_id)
         npc = self._npc(session, request.npc_id)
         clue = self._clue(session, request.clue_id)
         clue.discovered = True
@@ -293,8 +322,8 @@ class GameEngine:
         self._persist_session(session)
         return ActionResponse(game=session.view(), result=answer)
 
-    def accuse(self, session_id: str, request: AccuseRequest) -> ActionResponse:
-        session = self._session(session_id)
+    def accuse(self, session_id: str, request: AccuseRequest, client_id: str) -> ActionResponse:
+        session = self._session(session_id, client_id)
         session.phase = "review"
         suspect = self._npc(session, request.suspect_id)
         truth = session.script.truth
@@ -340,14 +369,25 @@ class GameEngine:
             npc.relation.trust = min(100, npc.relation.trust + 8)
             npc.relation.fear = max(0, npc.relation.fear - 4)
 
-    def _script(self, case_id: str, difficulty: Difficulty) -> CaseScript:
-        if case_id == "dynamic":
-            script = self._generate_case_with_llm(difficulty)
-            self.generated_cases[script.summary.id] = deepcopy(script)
-            return script
-        if case_id in self.generated_cases:
+    def _script(self, case_id: str | None, difficulty: Difficulty) -> CaseScript:
+        if case_id:
+            if case_id not in self.generated_cases:
+                raise KeyError("案件不存在。")
             return deepcopy(self.generated_cases[case_id])
-        raise KeyError("案件不存在。")
+        candidates = [
+            script
+            for script in self.generated_cases.values()
+            if script.summary.difficulty == difficulty and script.summary.status == "unsolved" and not self._case_has_session(script.summary.id)
+        ]
+        if not candidates:
+            raise ValueError(f"没有可用的{self._difficulty_label(difficulty)}预生成案件，请先到开发者后台生成。")
+        return deepcopy(candidates[0])
+
+    def _difficulty_label(self, difficulty: Difficulty) -> str:
+        return {"easy": "简单", "medium": "中等", "hard": "困难"}.get(difficulty, difficulty)
+
+    def _case_has_session(self, case_id: str) -> bool:
+        return any(session.case.id == case_id for session in self.sessions.values())
 
     def _restore(self) -> None:
         for case_id, payload in self.storage.load_case_scripts().items():
@@ -406,7 +446,7 @@ class GameEngine:
         return image_url.startswith("data:image/svg+xml")
 
     def _persist_session(self, session: GameSession) -> None:
-        self.storage.save_session(session.session_id, session.case.id, session.to_payload())
+        self.storage.save_session(session.session_id, session.case.id, session.client_id, session.to_payload())
 
     def _index_script_memories(self, script: CaseScript) -> None:
         for npc_id, data in script.npcs.items():
@@ -570,10 +610,16 @@ class GameEngine:
         text = str(value).strip()
         return text or default
 
-    def _session(self, session_id: str) -> GameSession:
+    def _client_id(self, client_id: str | None) -> str:
+        return (client_id or "global").strip() or "global"
+
+    def _session(self, session_id: str, client_id: str | None = None) -> GameSession:
         if session_id not in self.sessions:
             raise KeyError("游戏会话不存在。")
-        return self.sessions[session_id]
+        session = self.sessions[session_id]
+        if client_id is not None and session.client_id != self._client_id(client_id):
+            raise KeyError("游戏会话不存在。")
+        return session
 
     def _npc(self, session: GameSession, npc_id: str) -> NPCState:
         if npc_id not in session.npcs:

@@ -136,19 +136,27 @@ class GameStorage:
         self._execute("delete from sessions where case_id = ?", (case_id,))
         self.memory.delete_case_if_available(case_id)
 
-    def save_session(self, session_id: str, case_id: str, payload: dict[str, Any]) -> None:
+    def delete_client_case(self, client_id: str, case_id: str) -> None:
+        self._execute("delete from sessions where client_id = ? and case_id = ?", (client_id, case_id))
+
+    def save_session(self, session_id: str, case_id: str, client_id: str, payload: dict[str, Any]) -> None:
         self._execute(
             """
-            insert into sessions(session_id, case_id, payload, updated_at)
-            values (?, ?, ?, ?)
-            on conflict(session_id) do update set case_id = excluded.case_id, payload = excluded.payload, updated_at = excluded.updated_at
+            insert into sessions(session_id, case_id, client_id, payload, updated_at)
+            values (?, ?, ?, ?, ?)
+            on conflict(session_id) do update set case_id = excluded.case_id, client_id = excluded.client_id, payload = excluded.payload, updated_at = excluded.updated_at
             """,
-            (session_id, case_id, json.dumps(payload, ensure_ascii=False), self._now()),
+            (session_id, case_id, client_id, json.dumps(payload, ensure_ascii=False), self._now()),
         )
 
     def load_sessions(self) -> dict[str, dict[str, Any]]:
-        rows = self._query("select session_id, payload from sessions")
-        return {row["session_id"]: json.loads(row["payload"]) for row in rows}
+        rows = self._query("select session_id, client_id, payload from sessions")
+        payloads = {}
+        for row in rows:
+            payload = json.loads(row["payload"])
+            payload["client_id"] = payload.get("client_id") or row["client_id"] or "global"
+            payloads[row["session_id"]] = payload
+        return payloads
 
     def upsert_npc_memories(self, case_id: str, npc_id: str, memories: list[tuple[str, str]]) -> None:
         self.memory.upsert_npc_memories(case_id, npc_id, memories)
@@ -168,11 +176,15 @@ class GameStorage:
                 create table if not exists sessions(
                     session_id text primary key,
                     case_id text not null,
+                    client_id text not null default 'global',
                     payload text not null,
                     updated_at text not null
                 );
                 """
             )
+            columns = {row["name"] for row in conn.execute("pragma table_info(sessions)")}
+            if "client_id" not in columns:
+                conn.execute("alter table sessions add column client_id text not null default 'global'")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)

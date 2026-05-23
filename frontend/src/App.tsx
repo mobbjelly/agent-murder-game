@@ -5,6 +5,7 @@ import {
   CaseSummary,
   Difficulty,
   GameView,
+  getClientId,
   HealthResponse,
   NPCState,
 } from './api'
@@ -12,7 +13,6 @@ import {
 const difficultyOptions: Difficulty[] = ['easy', 'medium', 'hard']
 
 const generationSteps = ['分析题材', '生成嫌疑人', '埋设证据', '整理案情']
-const lastSessionKey = 'agent-murder-game:last-session-id'
 const tutorialModeKey = 'agent-murder-game:tutorial-mode'
 
 const quickQuestions = {
@@ -23,6 +23,8 @@ const quickQuestions = {
 
 function App() {
   const [cases, setCases] = useState<CaseSummary[]>([])
+  const [isAdminPage] = useState(() => window.location.pathname === '/admin')
+  const [lastSessionKey] = useState(() => `agent-murder-game:last-session-id:${getClientId()}`)
   const [game, setGame] = useState<GameView | null>(null)
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [selectedNpcId, setSelectedNpcId] = useState<string>('')
@@ -53,13 +55,14 @@ function App() {
       .health()
       .then(setHealth)
       .catch(() => setHealth({ ok: false }))
-    api
-      .cases()
+    const loadCases = isAdminPage ? api.adminCases : api.cases
+    loadCases()
       .then((items) => {
         setCases(items)
         setDifficulty(items[0]?.difficulty ?? 'medium')
       })
       .catch((err: Error) => setError(err.message))
+    if (isAdminPage) return
     const lastSessionId = window.localStorage.getItem(lastSessionKey)
     if (lastSessionId) {
       api
@@ -71,7 +74,7 @@ function App() {
         })
         .catch(() => window.localStorage.removeItem(lastSessionKey))
     }
-  }, [])
+  }, [isAdminPage, lastSessionKey])
 
   const selectedNpc = useMemo(() => {
     return (
@@ -95,17 +98,15 @@ function App() {
     setTutorialStep(0)
   }
 
-  async function startNewGame(caseId: string, nextDifficulty = difficulty) {
+  async function startNewGame(caseId?: string | null, nextDifficulty = difficulty) {
     setLoading(true)
-    setGenerationProgress(8)
-    setGenerationLabel(caseId === 'dynamic' ? generationSteps[0] : '载入案件')
+    setGenerationProgress(12)
+    setGenerationLabel('匹配预生成案件')
     setError('')
     let stepIndex = 0
     const progressTimer = window.setInterval(() => {
       stepIndex = Math.min(stepIndex + 1, generationSteps.length - 1)
-      setGenerationLabel(
-        caseId === 'dynamic' ? generationSteps[stepIndex] : '载入案件',
-      )
+      setGenerationLabel(stepIndex > 1 ? '载入案件' : '匹配预生成案件')
       setGenerationProgress((current) => Math.min(current + 22, 90))
     }, 450)
     try {
@@ -114,7 +115,7 @@ function App() {
         difficulty: nextDifficulty,
       })
       setGenerationProgress(100)
-      setGenerationLabel('案件已生成')
+      setGenerationLabel('案件已载入')
       setGame(nextGame)
       window.localStorage.setItem(lastSessionKey, nextGame.session_id)
       setCases((items) => mergeCase(items, nextGame.case))
@@ -123,7 +124,35 @@ function App() {
       setSelectedClueId('')
       setAccuse({ suspect_id: nextGame.npcs[0]?.id ?? '' })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '创建案件失败')
+      setError(err instanceof Error ? err.message : '载入案件失败')
+    } finally {
+      window.clearInterval(progressTimer)
+      window.setTimeout(() => {
+        setLoading(false)
+        setGenerationProgress(0)
+        setGenerationLabel('')
+      }, 250)
+    }
+  }
+
+  async function generateCaseForAdmin(nextDifficulty = difficulty) {
+    setLoading(true)
+    setGenerationProgress(8)
+    setGenerationLabel(generationSteps[0])
+    setError('')
+    let stepIndex = 0
+    const progressTimer = window.setInterval(() => {
+      stepIndex = Math.min(stepIndex + 1, generationSteps.length - 1)
+      setGenerationLabel(generationSteps[stepIndex])
+      setGenerationProgress((current) => Math.min(current + 22, 90))
+    }, 900)
+    try {
+      const nextCase = await api.generateCase({ difficulty: nextDifficulty })
+      setCases((items) => mergeCase(items, nextCase))
+      setGenerationProgress(100)
+      setGenerationLabel('预生成完成')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '预生成案件失败')
     } finally {
       window.clearInterval(progressTimer)
       window.setTimeout(() => {
@@ -251,11 +280,41 @@ function App() {
     }
   }
 
+  async function deleteAdminCase(caseId: string) {
+    if (loading) return
+    setLoading(true)
+    setError('')
+    try {
+      await api.deleteAdminCase(caseId)
+      setCases((items) => items.filter((item) => item.id !== caseId))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除案件失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   function askQuickQuestion(question: string) {
     if (!game || !activeNpcId || loading) return
     setSelectedNpcId(activeNpcId)
     streamNpcMessage(activeNpcId, question)
     setMessage('')
+  }
+
+  if (isAdminPage) {
+    return (
+      <AdminPage
+        cases={cases}
+        difficulty={difficulty}
+        loading={loading}
+        error={error}
+        progress={generationProgress}
+        progressLabel={generationLabel}
+        onDifficultyChange={setDifficulty}
+        onGenerate={() => generateCaseForAdmin(difficulty)}
+        onDelete={deleteAdminCase}
+      />
+    )
   }
 
   if (!game) {
@@ -290,6 +349,13 @@ function App() {
                     {difficultyLabel(item.difficulty)}
                   </span>
                 </button>
+                <button
+                  className="delete-case-button"
+                  onClick={() => deleteCase(item.id)}
+                  disabled={loading}
+                >
+                  删除
+                </button>
               </div>
             ))}
           </section>
@@ -300,7 +366,7 @@ function App() {
             onClick={() => setDifficultyModalOpen(true)}
             disabled={loading}
           >
-            {loading ? '生成案件中…' : '解决新案件'}
+            {loading ? '载入案件中…' : '解决新案件'}
           </button>
         </section>
         {difficultyModalOpen && (
@@ -311,7 +377,7 @@ function App() {
             onClose={() => setDifficultyModalOpen(false)}
             onConfirm={() => {
               setDifficultyModalOpen(false)
-              startNewGame('dynamic', difficulty)
+              startNewGame(null, difficulty)
             }}
           />
         )}
@@ -660,7 +726,7 @@ function DifficultyModal({
           ×
         </button>
         <h2>选择难度</h2>
-        <p>难度会影响嫌疑人的防备程度、线索显露速度和回答的含糊程度。</p>
+        <p>系统会从对应难度的预生成案件库中选择一个案件开始调查。</p>
         <div className="difficulty-options">
           {options.map((option) => (
             <button
@@ -687,10 +753,106 @@ function DifficultyModal({
           onClick={onConfirm}
           disabled={loading}
         >
-          {loading ? '生成中…' : '生成案件'}
+          {loading ? '载入中…' : '开始调查'}
         </button>
       </section>
     </div>
+  )
+}
+
+function AdminPage({
+  cases,
+  difficulty,
+  loading,
+  error,
+  progress,
+  progressLabel,
+  onDifficultyChange,
+  onGenerate,
+  onDelete,
+}: {
+  cases: CaseSummary[]
+  difficulty: Difficulty
+  loading: boolean
+  error: string
+  progress: number
+  progressLabel: string
+  onDifficultyChange: (difficulty: Difficulty) => void
+  onGenerate: () => void
+  onDelete: (caseId: string) => void
+}) {
+  const counts = difficultyOptions.map((item) => ({
+    difficulty: item,
+    count: cases.filter((caseItem) => caseItem.difficulty === item).length,
+  }))
+  return (
+    <main className="admin-page">
+      <section className="admin-shell">
+        <header className="admin-header">
+          <div>
+            <span>Developer Console</span>
+            <h1>案件预生成后台</h1>
+            <p>玩家点击“解决新案件”时，只会从这里预生成好的同难度案件中选择。</p>
+          </div>
+          <a href="/" className="admin-back-link">
+            返回游戏
+          </a>
+        </header>
+
+        {error && <div className="error-banner">{error}</div>}
+        {loading && (
+          <GlobalProgress value={progress} label={progressLabel || '正在预生成'} />
+        )}
+
+        <section className="admin-generate-card">
+          <div>
+            <h2>生成新案件</h2>
+            <p>选择难度后会调用 LLM 生成案件文本、NPC 记忆和图片资源，并写入数据库。</p>
+          </div>
+          <select
+            value={difficulty}
+            onChange={(event) => onDifficultyChange(event.target.value as Difficulty)}
+            disabled={loading}
+          >
+            {difficultyOptions.map((item) => (
+              <option key={item} value={item}>
+                {difficultyLabel(item)}
+              </option>
+            ))}
+          </select>
+          <button className="primary-action admin-generate-button" onClick={onGenerate} disabled={loading}>
+            {loading ? '生成中…' : '预生成案件'}
+          </button>
+        </section>
+
+        <section className="admin-stats-grid">
+          {counts.map((item) => (
+            <div key={item.difficulty} className="admin-stat-card">
+              <strong>{item.count}</strong>
+              <span>{difficultyLabel(item.difficulty)}案件</span>
+            </div>
+          ))}
+        </section>
+
+        <section className="admin-case-list">
+          <h2>案件库存</h2>
+          {cases.length === 0 && <p className="admin-empty">暂无预生成案件。</p>}
+          {cases.map((item) => (
+            <div key={item.id} className="admin-case-row">
+              <div>
+                <h3>{item.title}</h3>
+                <p>
+                  {difficultyLabel(item.difficulty)} · {item.created_label} · {item.updated_label}
+                </p>
+              </div>
+              <button onClick={() => onDelete(item.id)} disabled={loading}>
+                删除
+              </button>
+            </div>
+          ))}
+        </section>
+      </section>
+    </main>
   )
 }
 
@@ -705,12 +867,12 @@ function getTutorialSteps(inGame: boolean): TutorialStep[] {
     return [
       {
         title: '欢迎来到 AI 剧本杀',
-        body: '先选择难度，然后点击“生成新案件”。系统会生成案件、嫌疑人、场景和线索。',
+        body: '先点击“解决新案件”，选择难度后，系统会从预生成案件库中为你载入一个案件。',
         tip: '建议第一次选择“中等”，体验最完整。',
       },
       {
         title: '案件会保存',
-        body: '生成后的案件会出现在列表里。刷新页面或重启服务后，案件仍可继续调查。',
+        body: '开始调查后的案件会出现在列表里。刷新页面或重启服务后，案件仍可继续调查。',
         tip: '不需要的案件可以点击“删除”。',
       },
     ]

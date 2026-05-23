@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import json
 
 from app.game.engine import GameEngine
-from app.game.models import AccuseRequest, ConfrontRequest, NewGameRequest, PlayerMessage, SearchRequest
+from app.game.models import AccuseRequest, ConfrontRequest, GenerateCaseRequest, NewGameRequest, PlayerMessage, SearchRequest
 
 
 load_dotenv()
@@ -52,12 +52,25 @@ def new_game(request: NewGameRequest | None = None):
 
 
 @app.get("/api/cases")
-def list_cases():
-    return engine.list_cases()
+def list_cases(x_client_id: str = Header(default="global")):
+    return engine.list_cases(x_client_id)
 
 
-@app.delete("/api/cases/{case_id}")
-def delete_case(case_id: str):
+@app.post("/api/admin/cases/generate")
+def generate_case(request: GenerateCaseRequest):
+    try:
+        return engine.generate_case(request.difficulty).summary
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/admin/cases")
+def list_admin_cases():
+    return engine.list_admin_cases()
+
+
+@app.delete("/api/admin/cases/{case_id}")
+def delete_admin_case(case_id: str):
     try:
         return engine.delete_case(case_id)
     except KeyError as exc:
@@ -66,18 +79,28 @@ def delete_case(case_id: str):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.get("/api/game/{session_id}")
-def get_game(session_id: str):
+@app.delete("/api/cases/{case_id}")
+def delete_case(case_id: str, x_client_id: str = Header(default="global")):
     try:
-        return engine.get(session_id)
+        return engine.delete_client_case(x_client_id, case_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/game/{session_id}")
+def get_game(session_id: str, x_client_id: str = Header(default="global")):
+    try:
+        return engine.get(session_id, x_client_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/api/debug/game/{session_id}/npcs")
-def debug_npcs(session_id: str):
+def debug_npcs(session_id: str, x_client_id: str = Header(default="")):
     try:
-        return engine.debug_npcs(session_id)
+        return engine.debug_npcs(session_id, x_client_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -87,18 +110,18 @@ def debug_npcs(session_id: str):
 
 
 @app.post("/api/game/{session_id}/talk")
-def talk(session_id: str, request: PlayerMessage):
+def talk(session_id: str, request: PlayerMessage, x_client_id: str = Header(default="global")):
     try:
-        return engine.talk(session_id, request)
+        return engine.talk(session_id, request, x_client_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/game/{session_id}/talk/stream")
-def stream_talk(session_id: str, request: PlayerMessage):
+def stream_talk(session_id: str, request: PlayerMessage, x_client_id: str = Header(default="global")):
     def events():
         try:
-            for event in engine.stream_talk(session_id, request):
+            for event in engine.stream_talk(session_id, request, x_client_id):
                 payload = event.copy()
                 if payload.get("game") is not None:
                     payload["game"] = payload["game"].model_dump()
@@ -112,17 +135,17 @@ def stream_talk(session_id: str, request: PlayerMessage):
 
 
 @app.post("/api/game/{session_id}/search")
-def search(session_id: str, request: SearchRequest):
+def search(session_id: str, request: SearchRequest, x_client_id: str = Header(default="global")):
     try:
-        return engine.search(session_id, request)
+        return engine.search(session_id, request, x_client_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/game/{session_id}/confront")
-def confront(session_id: str, request: ConfrontRequest):
+def confront(session_id: str, request: ConfrontRequest, x_client_id: str = Header(default="global")):
     try:
-        return engine.confront(session_id, request)
+        return engine.confront(session_id, request, x_client_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -132,8 +155,8 @@ def confront(session_id: str, request: ConfrontRequest):
 
 
 @app.post("/api/game/{session_id}/accuse")
-def accuse(session_id: str, request: AccuseRequest):
+def accuse(session_id: str, request: AccuseRequest, x_client_id: str = Header(default="global")):
     try:
-        return engine.accuse(session_id, request)
+        return engine.accuse(session_id, request, x_client_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -72,7 +72,12 @@ class GameView(BaseModel):
 
 
 class NewGameRequest(BaseModel):
-    case_id: str = "dynamic"
+    case_id: str | None = None
+    difficulty: Difficulty = "medium"
+    client_id: str = "global"
+
+
+class GenerateCaseRequest(BaseModel):
     difficulty: Difficulty = "medium"
 
 

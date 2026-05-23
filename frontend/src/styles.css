@@ -290,6 +290,85 @@ select, input, textarea {
   font-weight: 950;
 }
 
+.admin-page {
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 0%, #3c241b, #070605 58%);
+  color: #fff3df;
+  padding: 34px;
+}
+.admin-shell {
+  width: min(1080px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+}
+.admin-header,
+.admin-generate-card,
+.admin-case-list {
+  border: 2px solid rgba(255,255,255,.12);
+  border-radius: 18px;
+  background: rgba(13,10,9,.82);
+  box-shadow: 0 14px 40px rgba(0,0,0,.35);
+}
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 26px;
+}
+.admin-header span { color: #e4b564; font-weight: 950; letter-spacing: 1px; text-transform: uppercase; }
+.admin-header h1 { margin: 8px 0; font-size: 42px; }
+.admin-header p { margin: 0; color: #b9aea4; font-size: 17px; font-weight: 750; }
+.admin-back-link {
+  flex: 0 0 auto;
+  border-radius: 12px;
+  background: #fff3c4;
+  color: #21140d;
+  padding: 12px 18px;
+  font-weight: 950;
+}
+.admin-generate-card {
+  display: grid;
+  grid-template-columns: 1fr 180px auto;
+  align-items: end;
+  gap: 16px;
+  padding: 22px;
+}
+.admin-generate-card h2,
+.admin-case-list h2 { margin: 0 0 8px; font-size: 26px; }
+.admin-generate-card p { margin: 0; color: #b9aea4; font-weight: 750; line-height: 1.45; }
+.admin-generate-button { min-width: 160px; padding: 14px 20px; font-size: 20px; }
+.admin-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.admin-stat-card {
+  border-radius: 16px;
+  background: #1e1512;
+  padding: 20px;
+  text-align: center;
+  border: 1px solid rgba(255,255,255,.1);
+}
+.admin-stat-card strong { display: block; font-size: 42px; line-height: 1; }
+.admin-stat-card span { display: block; margin-top: 8px; color: #c8bcb4; font-weight: 900; }
+.admin-case-list { padding: 20px; }
+.admin-empty { margin: 10px 0 0; color: #a99d95; font-weight: 800; }
+.admin-case-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid rgba(255,255,255,.1);
+  padding: 16px 0;
+}
+.admin-case-row h3 { margin: 0; font-size: 22px; }
+.admin-case-row p { margin: 6px 0 0; color: #aaa1a0; font-weight: 800; }
+.admin-case-row button {
+  border-radius: 10px;
+  background: #7e2c2c;
+  color: #fff7ef;
+  padding: 10px 16px;
+  font-weight: 950;
+}
+
 .board-page {
   position: relative;
   min-height: 100vh;

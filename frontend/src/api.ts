@@ -1,5 +1,15 @@
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api'
 const ASSET_BASE = API_BASE.replace(/\/api\/?$/, '')
+const CLIENT_ID_KEY = 'agent-murder-game:client-id'
+
+export function getClientId() {
+  let clientId = window.localStorage.getItem(CLIENT_ID_KEY)
+  if (!clientId) {
+    clientId = `browser_${crypto.randomUUID()}`
+    window.localStorage.setItem(CLIENT_ID_KEY, clientId)
+  }
+  return clientId
+}
 
 export function assetUrl(value: string) {
   if (!value || value.startsWith('data:') || /^https?:\/\//.test(value)) return value
@@ -88,8 +98,12 @@ export interface HealthResponse {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Client-Id': getClientId(),
+      ...options.headers,
+    },
   })
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Request failed' }))
@@ -101,11 +115,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   health: () => request<HealthResponse>('/health'),
   cases: () => request<CaseSummary[]>('/cases'),
+  adminCases: () => request<CaseSummary[]>('/admin/cases'),
+  deleteAdminCase: (caseId: string) => request<{ ok: boolean; case_id: string }>(`/admin/cases/${caseId}`, {
+    method: 'DELETE',
+  }),
   deleteCase: (caseId: string) => request<{ ok: boolean; case_id: string }>(`/cases/${caseId}`, {
     method: 'DELETE',
   }),
   game: (sessionId: string) => request<GameView>(`/game/${sessionId}`),
-  newGame: (payload: { case_id: string; difficulty: Difficulty }) => request<GameView>('/game/new', {
+  newGame: (payload: { case_id?: string | null; difficulty: Difficulty }) => request<GameView>('/game/new', {
+    method: 'POST',
+    body: JSON.stringify({ ...payload, client_id: getClientId() }),
+  }),
+  generateCase: (payload: { difficulty: Difficulty }) => request<CaseSummary>('/admin/cases/generate', {
     method: 'POST',
     body: JSON.stringify(payload),
   }),
@@ -120,7 +142,7 @@ export const api = {
   ) => {
     const response = await fetch(`${API_BASE}/game/${sessionId}/talk/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
       body: JSON.stringify(payload),
     })
     if (!response.ok || !response.body) {
