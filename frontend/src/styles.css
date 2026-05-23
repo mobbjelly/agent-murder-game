@@ -488,8 +488,6 @@ select, input, textarea {
 }
 .clue-header span { color: #8b5b32; font-weight: 900; }
 .chat-log {
-  display: grid;
-  gap: 10px;
   max-height: 238px;
   overflow: auto;
   border: 2px solid rgba(92,67,50,.18);
@@ -505,7 +503,7 @@ select, input, textarea {
   background: rgba(255,250,241,.7);
   box-shadow: 0 2px 0 rgba(0,0,0,.08);
 }
-.chat-message.player { margin-left: 22px; background: #e6f0ff; }
+.chat-message.player { margin-left: 22px; background: #e6f0ff; margin-bottom: 15px; margin-top: 15px;}
 .chat-message.npc { margin-right: 22px; background: #fffaf1; }
 .chat-message.dm { background: #fff0bf; }
 .chat-message strong { display: block; margin-bottom: 4px; font-size: 14px; color: #795238; }

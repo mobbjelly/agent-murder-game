@@ -179,6 +179,9 @@ class GameEngine:
         for case in cases:
             if case.id in active_case_ids:
                 case.updated_label = "调查中"
+        default_case = self._default_available_case(active_case_ids)
+        if default_case:
+            cases.append(default_case)
         return cases
 
     def list_admin_cases(self) -> list[CaseSummary]:
@@ -382,6 +385,18 @@ class GameEngine:
         if not candidates:
             raise ValueError(f"没有可用的{self._difficulty_label(difficulty)}预生成案件，请先到开发者后台生成。")
         return deepcopy(candidates[0])
+
+    def _default_available_case(self, exclude_case_ids: set[str]) -> CaseSummary | None:
+        for script in self.generated_cases.values():
+            case_id = script.summary.id
+            if case_id in exclude_case_ids:
+                continue
+            if script.summary.status != "unsolved":
+                continue
+            case = deepcopy(script.summary)
+            case.updated_label = "待领取"
+            return case
+        return None
 
     def _difficulty_label(self, difficulty: Difficulty) -> str:
         return {"easy": "简单", "medium": "中等", "hard": "困难"}.get(difficulty, difficulty)
