@@ -318,7 +318,17 @@ select, input, textarea {
 }
 .paper-card::before { left: -18px; top: -14px; }
 .paper-card::after { right: -16px; bottom: -12px; }
-.story-note > p { margin: 0; font-size: 18px; line-height: 1.45; font-weight: 650; }
+.case-brief h2, .clue-header h2 { margin: 0; font-size: 24px; font-weight: 950; }
+.case-brief p { margin: 12px 0 0; font-size: 18px; line-height: 1.45; font-weight: 650; }
+.clue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 22px;
+  border-top: 2px dashed rgba(92,67,50,.24);
+  padding-top: 18px;
+}
+.clue-header span { color: #8b5b32; font-weight: 900; }
 .chat-log {
   display: grid;
   gap: 10px;
@@ -342,21 +352,22 @@ select, input, textarea {
 .chat-message.dm { background: #fff0bf; }
 .chat-message strong { display: block; margin-bottom: 4px; font-size: 14px; color: #795238; }
 .chat-message p { margin: 0; font-size: 15px; line-height: 1.45; font-weight: 650; }
-.evidence-strip { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.evidence-strip { margin-top: 12px; display: grid; gap: 10px; }
 .evidence-strip > span { grid-column: 1 / -1; color: #7d6b5d; font-weight: 800; }
 .evidence {
   background: rgba(255,255,255,.42);
   border: 2px solid transparent;
   border-radius: 10px;
-  padding: 8px;
+  padding: 12px 14px;
   text-align: left;
+  display: grid;
+  gap: 7px;
 }
 .evidence.active { border-color: #c68432; }
-.evidence img { width: 100%; height: 76px; object-fit: cover; border-radius: 6px; }
 .evidence strong, .evidence small { display: block; }
-.evidence strong { margin-top: 5px; font-size: 13px; }
+.evidence strong { font-size: 16px; }
 .evidence small { color: #775f51; }
-.evidence p { margin: 6px 0 0; color: #3d2e25; font-size: 13px; line-height: 1.35; font-weight: 700; }
+.evidence p { margin: 0; color: #3d2e25; font-size: 14px; line-height: 1.42; font-weight: 700; }
 
 .suspect-column {
   position: relative;
@@ -417,15 +428,18 @@ select, input, textarea {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
   gap: 24px;
+  align-items: stretch;
 }
-.close-button { position: absolute; right: 20px; top: 12px; background: transparent; font-size: 54px; line-height: 1; }
+.close-button { position: absolute; right: 0px; top: 0px; background: transparent; font-size: 30px; line-height: 1; }
 .modal-profile img { width: 360px; height: 360px; object-fit: cover; }
 .modal-profile h2 { margin: 20px 0 10px; font-size: 38px; }
 .modal-profile p { font-size: 22px; line-height: 1.45; }
 .modal-side-panel {
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 16px;
   overflow: hidden;
 }
@@ -449,13 +463,13 @@ select, input, textarea {
 .modal-actions strong { display: block; font-size: 22px; }
 .modal-actions span { display: block; margin-top: 8px; font-size: 15px; }
 .modal-chat-panel {
+  height: 100%;
   min-width: 0;
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 16px;
   overflow: hidden;
-  padding-top: 28px;
 }
 .dialog-panel { min-height: 0; overflow: hidden; }
 .dialog-panel .chat-log { height: 100%; max-height: none; overflow-y: auto; }
@@ -471,13 +485,14 @@ select, input, textarea {
 .question-box {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 150px 120px 68px;
-  align-items: end;
+  align-items: center;
   gap: 12px;
   border: 2px solid #d7c3c8;
   border-radius: 10px;
   padding: 14px;
 }
-.question-box textarea { height: 82px; min-height: 82px; resize: none; border: 0; background: transparent; font-size: 22px; }
+.question-box input { height: 60px; border: 0; background: transparent; font-size: 18px; }
+.question-box select { height: 60px; }
 .accuse-button {
   height: 60px;
   border-radius: 10px;

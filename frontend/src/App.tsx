@@ -37,8 +37,13 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [generationProgress, setGenerationProgress] = useState(0)
   const [generationLabel, setGenerationLabel] = useState('')
-  const [actionResult, setActionResult] = useState<{ npcId: string; content: string } | null>(null)
-  const [tutorialEnabled, setTutorialEnabled] = useState(() => window.localStorage.getItem(tutorialModeKey) !== 'off')
+  const [actionResult, setActionResult] = useState<{
+    npcId: string
+    content: string
+  } | null>(null)
+  const [tutorialEnabled, setTutorialEnabled] = useState(
+    () => window.localStorage.getItem(tutorialModeKey) !== 'off',
+  )
   const [tutorialStep, setTutorialStep] = useState(0)
   const [error, setError] = useState('')
 
@@ -80,7 +85,8 @@ function App() {
   }, [game, activeNpcId])
 
   const tutorialSteps = useMemo(() => getTutorialSteps(Boolean(game)), [game])
-  const currentTutorial = tutorialSteps[Math.min(tutorialStep, tutorialSteps.length - 1)]
+  const currentTutorial =
+    tutorialSteps[Math.min(tutorialStep, tutorialSteps.length - 1)]
 
   function setTutorialMode(enabled: boolean) {
     setTutorialEnabled(enabled)
@@ -127,7 +133,10 @@ function App() {
     }
   }
 
-  async function runAction(action: () => Promise<{ game: GameView; result?: string }>, resultNpcId?: string) {
+  async function runAction(
+    action: () => Promise<{ game: GameView; result?: string }>,
+    resultNpcId?: string,
+  ) {
     if (!game) return
     setLoading(true)
     setError('')
@@ -217,7 +226,10 @@ function App() {
 
   function submitAccuse() {
     if (!game || !activeNpcId) return
-    runAction(() => api.accuse(game.session_id, { suspect_id: activeNpcId }), activeNpcId)
+    runAction(
+      () => api.accuse(game.session_id, { suspect_id: activeNpcId }),
+      activeNpcId,
+    )
   }
 
   async function deleteCase(caseId: string) {
@@ -249,7 +261,11 @@ function App() {
     return (
       <main className="case-list-page">
         <section className="case-shell">
-          <TutorialToggle enabled={tutorialEnabled} onChange={setTutorialMode} />
+          <TutorialToggle
+            enabled={tutorialEnabled}
+            onChange={setTutorialMode}
+            floating
+          />
           {error && <div className="error-banner">{error}</div>}
           {loading && (
             <GlobalProgress
@@ -309,17 +325,21 @@ function App() {
             ))}
           </section>
 
-          <p className="case-count-tip">
-            你还有 {cases.length} 个案件待侦破！
-          </p>
+          <p className="case-count-tip">你还有 {cases.length} 个案件待侦破！</p>
         </section>
         {tutorialEnabled && currentTutorial && (
           <TutorialOverlay
             step={currentTutorial}
             index={tutorialStep}
             total={tutorialSteps.length}
-            onNext={() => setTutorialStep((current) => Math.min(current + 1, tutorialSteps.length - 1))}
-            onPrev={() => setTutorialStep((current) => Math.max(current - 1, 0))}
+            onNext={() =>
+              setTutorialStep((current) =>
+                Math.min(current + 1, tutorialSteps.length - 1),
+              )
+            }
+            onPrev={() =>
+              setTutorialStep((current) => Math.max(current - 1, 0))
+            }
             onClose={() => setTutorialMode(false)}
           />
         )}
@@ -330,7 +350,11 @@ function App() {
   return (
     <main className="board-page">
       {error && <div className="error-banner floating">{error}</div>}
-      <TutorialToggle enabled={tutorialEnabled} onChange={setTutorialMode} floating />
+      <TutorialToggle
+        enabled={tutorialEnabled}
+        onChange={setTutorialMode}
+        floating
+      />
       <button className="back-button" onClick={() => setGame(null)}>
         ‹
       </button>
@@ -359,7 +383,14 @@ function App() {
       </section>
 
       <section className="story-note paper-card">
-        <p>{game.intro}</p>
+        <div className="case-brief">
+          <h2>案情简介</h2>
+          <p>{game.intro}</p>
+        </div>
+        <div className="clue-header">
+          <h2>证据线索</h2>
+          <span>{game.discovered_clues.length} 条</span>
+        </div>
         <div className="evidence-strip">
           {game.discovered_clues.length === 0 && <span>暂无线索。</span>}
           {game.discovered_clues.map((clue) => (
@@ -370,11 +401,10 @@ function App() {
               }
               onClick={() => setSelectedClueId(clue.id)}
             >
-              {clue.image_url && (
-                <img src={assetUrl(clue.image_url)} alt={clue.name} />
-              )}
-              <strong>{clue.name}</strong>
-              <small>{clue.location}</small>
+              <div>
+                <strong>{clue.name}</strong>
+                <small>{clue.location}</small>
+              </div>
               <p>{clue.description}</p>
             </button>
           ))}
@@ -413,7 +443,9 @@ function App() {
           selectedClueId={selectedClueId}
           message={message}
           loading={loading}
-          actionResult={actionResult?.npcId === activeNpc.id ? actionResult.content : ''}
+          actionResult={
+            actionResult?.npcId === activeNpc.id ? actionResult.content : ''
+          }
           onClose={() => setActiveNpcId(null)}
           onMessageChange={setMessage}
           onClueChange={setSelectedClueId}
@@ -435,7 +467,11 @@ function App() {
           step={currentTutorial}
           index={tutorialStep}
           total={tutorialSteps.length}
-          onNext={() => setTutorialStep((current) => Math.min(current + 1, tutorialSteps.length - 1))}
+          onNext={() =>
+            setTutorialStep((current) =>
+              Math.min(current + 1, tutorialSteps.length - 1),
+            )
+          }
           onPrev={() => setTutorialStep((current) => Math.max(current - 1, 0))}
           onClose={() => setTutorialMode(false)}
         />
@@ -462,7 +498,8 @@ interface SuspectModalProps {
 }
 
 function SuspectModal(props: SuspectModalProps) {
-  const { npc, clues, chat, selectedClueId, message, loading, actionResult } = props
+  const { npc, clues, chat, selectedClueId, message, loading, actionResult } =
+    props
   const modalChat = chat
     .filter(
       (item) =>
@@ -648,10 +685,21 @@ function getTutorialSteps(inGame: boolean): TutorialStep[] {
   ]
 }
 
-function TutorialToggle({ enabled, onChange, floating = false }: { enabled: boolean; onChange: (enabled: boolean) => void; floating?: boolean }) {
+function TutorialToggle({
+  enabled,
+  onChange,
+  floating = false,
+}: {
+  enabled: boolean
+  onChange: (enabled: boolean) => void
+  floating?: boolean
+}) {
   return (
-    <button className={floating ? 'tutorial-toggle floating' : 'tutorial-toggle'} onClick={() => onChange(!enabled)}>
-      {enabled ? '关闭新手引导' : '开启新手引导'}
+    <button
+      className={floating ? 'tutorial-toggle floating' : 'tutorial-toggle'}
+      onClick={() => onChange(!enabled)}
+    >
+      {enabled ? '关闭新手说明' : '开启新手说明'}
     </button>
   )
 }
@@ -673,14 +721,22 @@ function TutorialOverlay({
 }) {
   return (
     <aside className="tutorial-card">
-      <button className="tutorial-close" onClick={onClose}>×</button>
-      <span className="tutorial-progress">{index + 1} / {total}</span>
+      <button className="tutorial-close" onClick={onClose}>
+        ×
+      </button>
+      <span className="tutorial-progress">
+        {index + 1} / {total}
+      </span>
       <h2>{step.title}</h2>
       <p>{step.body}</p>
       <small>{step.tip}</small>
       <div className="tutorial-actions">
-        <button onClick={onPrev} disabled={index === 0}>上一步</button>
-        <button onClick={onNext} disabled={index === total - 1}>下一步</button>
+        <button onClick={onPrev} disabled={index === 0}>
+          上一步
+        </button>
+        <button onClick={onNext} disabled={index === total - 1}>
+          下一步
+        </button>
       </div>
     </aside>
   )
