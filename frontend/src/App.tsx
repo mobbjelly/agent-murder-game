@@ -18,6 +18,7 @@ import {
   TutorialOverlay,
   TutorialToggle,
 } from './components/Tutorial'
+import { VerdictModal, VerdictReport } from './components/VerdictModal'
 import { generationSteps, tutorialModeKey } from './constants/game'
 import { difficultyLabel, mergeCase } from './utils/cases'
 
@@ -47,6 +48,7 @@ function App() {
     npcId: string
     content: string
   } | null>(null)
+  const [verdictReport, setVerdictReport] = useState<VerdictReport | null>(null)
   const [tutorialEnabled, setTutorialEnabled] = useState(
     () => window.localStorage.getItem(tutorialModeKey) !== 'off',
   )
@@ -295,12 +297,31 @@ function App() {
     setMessage('')
   }
 
-  function submitAccuse() {
+  async function submitAccuse() {
     if (!game || !activeNpcId) return
-    runAction(
-      () => api.accuse(game.session_id, { suspect_id: activeNpcId }),
-      activeNpcId,
-    )
+    const accused = game.npcs.find((npc) => npc.id === activeNpcId)
+    if (!accused) return
+    setLoading(true)
+    setError('')
+    try {
+      const result = await api.accuse(game.session_id, { suspect_id: activeNpcId })
+      setGame(result.game)
+      setActionResult({ npcId: activeNpcId, content: result.result })
+      setVerdictReport({
+        accused,
+        correct: result.game.case.status === 'solved',
+        score: result.game.case.status === 'solved' ? 100 : 0,
+        result: result.result,
+        chat: result.game.chat,
+        caseTitle: result.game.case.title,
+      })
+      window.localStorage.setItem(lastSessionKey, result.game.session_id)
+      setCases((items) => mergeCase(items, result.game.case))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '指控失败')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function deleteCase(caseId: string) {
@@ -560,6 +581,12 @@ function App() {
         <ScenePreviewModal
           scene={previewScene}
           onClose={() => setPreviewScene(null)}
+        />
+      )}
+      {verdictReport && (
+        <VerdictModal
+          report={verdictReport}
+          onClose={() => setVerdictReport(null)}
         />
       )}
       {tutorialEnabled && currentTutorial && !activeNpc && !previewScene && (
