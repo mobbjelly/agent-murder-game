@@ -40,6 +40,7 @@ function App() {
   const [difficultyModalOpen, setDifficultyModalOpen] = useState(false)
   const [accuse, setAccuse] = useState({ suspect_id: '' })
   const [loading, setLoading] = useState(false)
+  const [thinkingNpcId, setThinkingNpcId] = useState<string | null>(null)
   const [generationProgress, setGenerationProgress] = useState(0)
   const [generationLabel, setGenerationLabel] = useState('')
   const [actionResult, setActionResult] = useState<{
@@ -171,12 +172,15 @@ function App() {
   async function runAction(
     action: () => Promise<{ game: GameView; result?: string }>,
     resultNpcId?: string,
+    thinkingNpcId?: string,
   ) {
     if (!game) return
     setLoading(true)
+    if (thinkingNpcId) setThinkingNpcId(thinkingNpcId)
     setError('')
     try {
       const result = await action()
+      if (thinkingNpcId) setThinkingNpcId(null)
       setGame(result.game)
       if (result.result && resultNpcId) {
         setActionResult({ npcId: resultNpcId, content: result.result })
@@ -186,6 +190,7 @@ function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : '行动失败')
     } finally {
+      if (thinkingNpcId) setThinkingNpcId(null)
       setLoading(false)
     }
   }
@@ -195,6 +200,7 @@ function App() {
     const npc = game.npcs.find((item) => item.id === npcId)
     if (!npc) return
     setLoading(true)
+    setThinkingNpcId(npcId)
     setError('')
     let streamedContent = ''
     try {
@@ -203,12 +209,18 @@ function App() {
         { npc_id: npcId, message: text },
         (event) => {
           if (event.type === 'game' && event.game) {
+            if (streamedContent) {
+              setThinkingNpcId(null)
+              setLoading(false)
+            }
             setGame(event.game)
             window.localStorage.setItem(lastSessionKey, event.game.session_id)
             setCases((items) => mergeCase(items, event.game!.case))
             return
           }
           if (event.type === 'chunk' && event.content) {
+            setThinkingNpcId(null)
+            setLoading(false)
             streamedContent += event.content
             setGame((current) => {
               if (!current) return current
@@ -235,6 +247,7 @@ function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : '流式对话失败')
     } finally {
+      setThinkingNpcId(null)
       setLoading(false)
     }
   }
@@ -249,12 +262,35 @@ function App() {
 
   function confront() {
     if (!game || !selectedNpc || !selectedClueId) return
+    const selectedClue = game.discovered_clues.find(
+      (clue) => clue.id === selectedClueId,
+    )
+    const confrontMessage = message.trim() || '请解释这件证据。'
+    if (selectedClue) {
+      setGame((current) => {
+        if (!current) return current
+        return {
+          ...current,
+          chat: [
+            ...current.chat,
+            {
+              speaker: '你',
+              role: 'player',
+              content: `展示【${selectedClue.name}】：${confrontMessage}`,
+              target_npc_id: selectedNpc.id,
+            },
+          ],
+        }
+      })
+    }
     runAction(() =>
       api.confront(game.session_id, {
         npc_id: selectedNpc.id,
         clue_id: selectedClueId,
-        message: message.trim() || '请解释这件证据。',
+        message: confrontMessage,
       }),
+      selectedNpc.id,
+      selectedNpc.id,
     )
     setMessage('')
   }
@@ -506,6 +542,7 @@ function App() {
           selectedClueId={selectedClueId}
           message={message}
           loading={loading}
+          thinking={thinkingNpcId === activeNpc.id}
           actionResult={
             actionResult?.npcId === activeNpc.id ? actionResult.content : ''
           }

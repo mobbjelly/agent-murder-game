@@ -10,6 +10,7 @@ interface SuspectModalProps {
   selectedClueId: string
   message: string
   loading: boolean
+  thinking: boolean
   actionResult: string
   onClose: () => void
   onMessageChange: (value: string) => void
@@ -21,8 +22,16 @@ interface SuspectModalProps {
 }
 
 export function SuspectModal(props: SuspectModalProps) {
-  const { npc, clues, chat, selectedClueId, message, loading, actionResult } =
-    props
+  const {
+    npc,
+    clues,
+    chat,
+    selectedClueId,
+    message,
+    loading,
+    thinking,
+    actionResult,
+  } = props
   const modalChat = chat
     .filter(
       (item) =>
@@ -83,7 +92,10 @@ export function SuspectModal(props: SuspectModalProps) {
         </aside>
         <section className="modal-chat-panel">
           <div className="dialog-panel">
-            <ChatLog messages={modalChat} />
+            <ChatLog
+              messages={modalChat}
+              thinkingLabel={thinking ? `${npc.name} 正在思考` : undefined}
+            />
             {actionResult && (
               <article className="action-result-card">
                 <strong>DM</strong>

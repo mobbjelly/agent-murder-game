@@ -1,16 +1,27 @@
+import { useEffect, useRef } from 'react'
 import { CaseSummary, GameView } from '../api'
 import { statusLabel } from '../utils/cases'
 
 export function ChatLog({
   messages,
   compact = false,
+  thinkingLabel,
 }: {
   messages: GameView['chat']
   compact?: boolean
+  thinkingLabel?: string
 }) {
+  const endRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [messages, thinkingLabel])
+
   return (
     <div className={compact ? 'chat-log compact' : 'chat-log'}>
-      {messages.length === 0 && <span className="empty-chat">暂无对话。</span>}
+      {messages.length === 0 && !thinkingLabel && (
+        <span className="empty-chat">暂无对话。</span>
+      )}
       {messages.map((item, index) => (
         <article
           key={`${item.speaker}-${index}-${item.content.slice(0, 8)}`}
@@ -20,6 +31,19 @@ export function ChatLog({
           <p>{item.content}</p>
         </article>
       ))}
+      {thinkingLabel && (
+        <article className="chat-message npc thinking" aria-live="polite">
+          <strong>{thinkingLabel}</strong>
+          <p>
+            <span className="typing-dots" aria-label="思考中">
+              <span />
+              <span />
+              <span />
+            </span>
+          </p>
+        </article>
+      )}
+      <div ref={endRef} />
     </div>
   )
 }
