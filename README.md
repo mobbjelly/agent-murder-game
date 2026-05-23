@@ -41,6 +41,48 @@ npm run dev
 
 打开 `http://localhost:5173`。
 
+## Docker Compose 部署
+
+先准备环境变量文件：
+
+```bash
+cp .env.example .env
+# 可选：填入 DASHSCOPE_API_KEY；不填时系统会使用本地 mock 回复
+```
+
+启动服务：
+
+```bash
+docker compose up -d --build
+```
+
+打开 `http://localhost:18080`。
+
+默认端口不会占用常见的 `80` / `8000`：
+
+- 前端：宿主机 `18080` -> 容器 `80`。
+- 后端：宿主机 `18000` -> 容器 `8000`。
+
+如需自定义端口，可在 `.env` 中添加：
+
+```bash
+FRONTEND_PORT=18080
+BACKEND_PORT=18000
+```
+
+常用命令：
+
+```bash
+docker compose logs -f
+docker compose down
+```
+
+Compose 会启动：
+
+- `backend`：FastAPI 服务，容器内监听 `8000`，默认映射到宿主机 `18000`。
+- `frontend`：Nginx 托管前端静态文件，并反向代理 `/api` 和 `/assets/generated` 到后端。
+- `backend-data`：持久化 SQLite、Chroma、生成图片和 LLM 调用日志。
+
 ## 环境变量
 
 - `DASHSCOPE_API_KEY`：阿里云百炼 / DashScope API Key。

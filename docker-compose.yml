@@ -1,0 +1,41 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: agent-murder-game-backend
+    env_file:
+      - path: ./.env.example
+        required: true
+      - path: ./.env
+        required: false
+    environment:
+      GAME_DB_PATH: /app/data/game.db
+      CHROMA_PATH: /app/data/chroma
+      GENERATED_ASSETS_DIR: /app/data/generated
+      GENERATED_ASSETS_URL_PREFIX: /assets/generated
+      LLM_LOG_PATH: /app/data/logs/llm_calls.jsonl
+    volumes:
+      - backend-data:/app/data
+    ports:
+      - "${BACKEND_PORT:-18000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: agent-murder-game-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-18080}:80"
+    restart: unless-stopped
+
+volumes:
+  backend-data:
