@@ -271,7 +271,7 @@ class GameEngine:
         else:
             clue.discovered = True
             result = f"你在{request.location}发现了【{clue.name}】：{clue.description}"
-        session.chat.append(ChatMessage(speaker="DM", role="dm", content=result, target_npc_id=request.suspect_id))
+        session.chat.append(ChatMessage(speaker="DM", role="dm", content=result))
 
         dm_hint = self.dm.summarize_scene(self._shared_context(session))
         session.chat.append(ChatMessage(speaker="DM", role="dm", content=dm_hint))
@@ -282,8 +282,7 @@ class GameEngine:
         session = self._session(session_id)
         npc = self._npc(session, request.npc_id)
         clue = self._clue(session, request.clue_id)
-        if not clue.discovered:
-            raise ValueError("这件证据还没有被发现。")
+        clue.discovered = True
 
         npc.relation.pressure = min(100, npc.relation.pressure + 18)
         npc.relation.fear = min(100, npc.relation.fear + 10)
@@ -308,7 +307,7 @@ class GameEngine:
             f"真相：凶手是{suspect.name if correct else self._npc(session, truth['killer_id']).name}。作案手法：{truth['method']} 动机：{truth['motive']}"
         )
         session.chat.append(ChatMessage(speaker="你", role="player", content=f"我指控{suspect.name}。", target_npc_id=request.suspect_id))
-        session.chat.append(ChatMessage(speaker="DM", role="dm", content=result))
+        session.chat.append(ChatMessage(speaker="DM", role="dm", content=result, target_npc_id=request.suspect_id))
         self._persist_session(session)
         return ActionResponse(game=session.view(), result=result)
 

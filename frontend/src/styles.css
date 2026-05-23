@@ -55,6 +55,58 @@ img { display: block; max-width: 100%; }
 .global-progress-track { height: 12px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.18); }
 .global-progress-track div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #e0a54e, #fff28a); transition: width .25s ease; }
 
+.tutorial-toggle {
+  justify-self: end;
+  width: max-content;
+  border: 2px solid rgba(255,255,255,.18);
+  border-radius: 999px;
+  background: #fff8df;
+  color: #241813;
+  padding: 10px 16px;
+  font-weight: 900;
+  box-shadow: 0 4px 0 rgba(0,0,0,.22);
+}
+.tutorial-toggle.floating {
+  position: fixed;
+  z-index: 12;
+  right: 24px;
+  top: 22px;
+}
+.tutorial-card {
+  position: fixed;
+  z-index: 18;
+  right: 28px;
+  bottom: 28px;
+  width: min(390px, calc(100vw - 56px));
+  border: 3px solid rgba(84,61,47,.28);
+  border-radius: 18px;
+  background: #fff8df;
+  color: #211712;
+  padding: 22px;
+  box-shadow: 8px 10px 0 rgba(0,0,0,.28);
+}
+.tutorial-close {
+  position: absolute;
+  right: 14px;
+  top: 10px;
+  background: transparent;
+  font-size: 30px;
+  line-height: 1;
+}
+.tutorial-progress { color: #8b5b32; font-weight: 950; }
+.tutorial-card h2 { margin: 10px 0 10px; font-size: 28px; }
+.tutorial-card p { margin: 0; font-size: 17px; line-height: 1.5; font-weight: 750; }
+.tutorial-card small { display: block; margin-top: 12px; color: #7a5b42; font-weight: 800; line-height: 1.4; }
+.tutorial-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 18px; }
+.tutorial-actions button {
+  flex: 1;
+  border-radius: 10px;
+  background: #1768b9;
+  color: #fff;
+  padding: 10px 12px;
+  font-weight: 900;
+}
+
 .weekly-card {
   display: grid;
   grid-template-columns: 132px 1fr auto;
@@ -407,6 +459,15 @@ select, input, textarea {
 }
 .dialog-panel { min-height: 0; overflow: hidden; }
 .dialog-panel .chat-log { height: 100%; max-height: none; overflow-y: auto; }
+.action-result-card {
+  margin-top: 10px;
+  border-radius: 12px;
+  background: #fff0bf;
+  padding: 12px 14px;
+  box-shadow: 0 2px 0 rgba(0,0,0,.08);
+}
+.action-result-card strong { display: block; margin-bottom: 4px; color: #795238; }
+.action-result-card p { margin: 0; font-size: 15px; line-height: 1.45; font-weight: 750; white-space: pre-wrap; }
 .question-box {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 150px 120px 68px;

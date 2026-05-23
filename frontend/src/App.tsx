@@ -13,6 +13,7 @@ const difficultyOptions: Difficulty[] = ['easy', 'medium', 'hard']
 
 const generationSteps = ['分析题材', '生成嫌疑人', '埋设证据', '整理案情']
 const lastSessionKey = 'agent-murder-game:last-session-id'
+const tutorialModeKey = 'agent-murder-game:tutorial-mode'
 
 const quickQuestions = {
   relation: '请说明你和死者的真实关系。有没有利益冲突、旧怨或近期争执？',
@@ -36,6 +37,9 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [generationProgress, setGenerationProgress] = useState(0)
   const [generationLabel, setGenerationLabel] = useState('')
+  const [actionResult, setActionResult] = useState<{ npcId: string; content: string } | null>(null)
+  const [tutorialEnabled, setTutorialEnabled] = useState(() => window.localStorage.getItem(tutorialModeKey) !== 'off')
+  const [tutorialStep, setTutorialStep] = useState(0)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -74,6 +78,15 @@ function App() {
   const activeNpc = useMemo(() => {
     return game?.npcs.find((npc) => npc.id === activeNpcId) ?? null
   }, [game, activeNpcId])
+
+  const tutorialSteps = useMemo(() => getTutorialSteps(Boolean(game)), [game])
+  const currentTutorial = tutorialSteps[Math.min(tutorialStep, tutorialSteps.length - 1)]
+
+  function setTutorialMode(enabled: boolean) {
+    setTutorialEnabled(enabled)
+    window.localStorage.setItem(tutorialModeKey, enabled ? 'on' : 'off')
+    setTutorialStep(0)
+  }
 
   async function startNewGame(caseId: string, nextDifficulty = difficulty) {
     setLoading(true)
@@ -114,13 +127,16 @@ function App() {
     }
   }
 
-  async function runAction(action: () => Promise<{ game: GameView }>) {
+  async function runAction(action: () => Promise<{ game: GameView; result?: string }>, resultNpcId?: string) {
     if (!game) return
     setLoading(true)
     setError('')
     try {
       const result = await action()
       setGame(result.game)
+      if (result.result && resultNpcId) {
+        setActionResult({ npcId: resultNpcId, content: result.result })
+      }
       window.localStorage.setItem(lastSessionKey, result.game.session_id)
       setCases((items) => mergeCase(items, result.game.case))
     } catch (err) {
@@ -200,8 +216,8 @@ function App() {
   }
 
   function submitAccuse() {
-    if (!game) return
-    runAction(() => api.accuse(game.session_id, accuse))
+    if (!game || !activeNpcId) return
+    runAction(() => api.accuse(game.session_id, { suspect_id: activeNpcId }), activeNpcId)
   }
 
   async function deleteCase(caseId: string) {
@@ -233,6 +249,7 @@ function App() {
     return (
       <main className="case-list-page">
         <section className="case-shell">
+          <TutorialToggle enabled={tutorialEnabled} onChange={setTutorialMode} />
           {error && <div className="error-banner">{error}</div>}
           {loading && (
             <GlobalProgress
@@ -296,6 +313,16 @@ function App() {
             你还有 {cases.length} 个案件待侦破！
           </p>
         </section>
+        {tutorialEnabled && currentTutorial && (
+          <TutorialOverlay
+            step={currentTutorial}
+            index={tutorialStep}
+            total={tutorialSteps.length}
+            onNext={() => setTutorialStep((current) => Math.min(current + 1, tutorialSteps.length - 1))}
+            onPrev={() => setTutorialStep((current) => Math.max(current - 1, 0))}
+            onClose={() => setTutorialMode(false)}
+          />
+        )}
       </main>
     )
   }
@@ -303,6 +330,7 @@ function App() {
   return (
     <main className="board-page">
       {error && <div className="error-banner floating">{error}</div>}
+      <TutorialToggle enabled={tutorialEnabled} onChange={setTutorialMode} floating />
       <button className="back-button" onClick={() => setGame(null)}>
         ‹
       </button>
@@ -385,6 +413,7 @@ function App() {
           selectedClueId={selectedClueId}
           message={message}
           loading={loading}
+          actionResult={actionResult?.npcId === activeNpc.id ? actionResult.content : ''}
           onClose={() => setActiveNpcId(null)}
           onMessageChange={setMessage}
           onClueChange={setSelectedClueId}
@@ -401,6 +430,16 @@ function App() {
           onClose={() => setPreviewScene(null)}
         />
       )}
+      {tutorialEnabled && currentTutorial && !activeNpc && !previewScene && (
+        <TutorialOverlay
+          step={currentTutorial}
+          index={tutorialStep}
+          total={tutorialSteps.length}
+          onNext={() => setTutorialStep((current) => Math.min(current + 1, tutorialSteps.length - 1))}
+          onPrev={() => setTutorialStep((current) => Math.max(current - 1, 0))}
+          onClose={() => setTutorialMode(false)}
+        />
+      )}
     </main>
   )
 }
@@ -412,6 +451,7 @@ interface SuspectModalProps {
   selectedClueId: string
   message: string
   loading: boolean
+  actionResult: string
   onClose: () => void
   onMessageChange: (value: string) => void
   onClueChange: (value: string) => void
@@ -422,7 +462,7 @@ interface SuspectModalProps {
 }
 
 function SuspectModal(props: SuspectModalProps) {
-  const { npc, clues, chat, selectedClueId, message, loading } = props
+  const { npc, clues, chat, selectedClueId, message, loading, actionResult } = props
   const modalChat = chat
     .filter(
       (item) =>
@@ -484,11 +524,23 @@ function SuspectModal(props: SuspectModalProps) {
         <section className="modal-chat-panel">
           <div className="dialog-panel">
             <ChatLog messages={modalChat} />
+            {actionResult && (
+              <article className="action-result-card">
+                <strong>DM</strong>
+                <p>{actionResult}</p>
+              </article>
+            )}
           </div>
           <form className="question-box" onSubmit={props.onSubmit}>
             <textarea
               value={message}
               onChange={(event) => props.onMessageChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  props.onSubmit()
+                }
+              }}
               placeholder="输入质询问题..."
             />
             <select
@@ -543,6 +595,94 @@ function ScenePreviewModal({
         </div>
       </section>
     </div>
+  )
+}
+
+interface TutorialStep {
+  title: string
+  body: string
+  tip: string
+}
+
+function getTutorialSteps(inGame: boolean): TutorialStep[] {
+  if (!inGame) {
+    return [
+      {
+        title: '欢迎来到 AI 剧本杀',
+        body: '先选择难度，然后点击“生成新案件”。系统会生成案件、嫌疑人、场景和线索。',
+        tip: '建议第一次选择“中等”，体验最完整。',
+      },
+      {
+        title: '案件会保存',
+        body: '生成后的案件会出现在列表里。刷新页面或重启服务后，案件仍可继续调查。',
+        tip: '不需要的案件可以点击“删除”。',
+      },
+    ]
+  }
+  return [
+    {
+      title: '阅读案情和线索',
+      body: '中间纸条是案件简介和全部线索。先看地点、物品和矛盾点，建立初步时间线。',
+      tip: '线索不是答案，需要结合 NPC 证词判断。',
+    },
+    {
+      title: '查看场景大图',
+      body: '左侧是案发现场。点击场景卡片可以查看大图，帮助你观察环境和细节。',
+      tip: '现在场景点击只看图，不会触发搜证。',
+    },
+    {
+      title: '质询嫌疑人',
+      body: '右侧是嫌疑人。点击任意 NPC 后，可以用快捷问题或手动输入进行对话。',
+      tip: '每个 NPC 都有独立记忆，问同样问题可能得到不同反应。',
+    },
+    {
+      title: '用证据对质',
+      body: '在 NPC 对话框里选择一条证据，再点击“对质”，NPC 会被迫解释这件证据。',
+      tip: '关键证据通常会改变 NPC 的压力和防备程度。',
+    },
+    {
+      title: '最终指控',
+      body: '当你认为锁定真凶后，在对应 NPC 弹窗里点击“指控”。DM 会给出评分和真相复盘。',
+      tip: '指控会揭示真相，建议调查充分后再点击。',
+    },
+  ]
+}
+
+function TutorialToggle({ enabled, onChange, floating = false }: { enabled: boolean; onChange: (enabled: boolean) => void; floating?: boolean }) {
+  return (
+    <button className={floating ? 'tutorial-toggle floating' : 'tutorial-toggle'} onClick={() => onChange(!enabled)}>
+      {enabled ? '关闭新手引导' : '开启新手引导'}
+    </button>
+  )
+}
+
+function TutorialOverlay({
+  step,
+  index,
+  total,
+  onNext,
+  onPrev,
+  onClose,
+}: {
+  step: TutorialStep
+  index: number
+  total: number
+  onNext: () => void
+  onPrev: () => void
+  onClose: () => void
+}) {
+  return (
+    <aside className="tutorial-card">
+      <button className="tutorial-close" onClick={onClose}>×</button>
+      <span className="tutorial-progress">{index + 1} / {total}</span>
+      <h2>{step.title}</h2>
+      <p>{step.body}</p>
+      <small>{step.tip}</small>
+      <div className="tutorial-actions">
+        <button onClick={onPrev} disabled={index === 0}>上一步</button>
+        <button onClick={onNext} disabled={index === total - 1}>下一步</button>
+      </div>
+    </aside>
   )
 }
 
